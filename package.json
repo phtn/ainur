@@ -1,0 +1,30 @@
+{
+  "name": "cale",
+  "version": "0.1.0",
+  "description": "Minimal AI agent CLI with filesystem, shell, and web tools",
+  "type": "module",
+  "bin": {
+    "cale": "./bin/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun run --hot src/index.ts",
+    "build": "tsc --noEmit",
+    "lint:fix": "eslint . --fix 2>/dev/null || true"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "3",
+    "@ai-sdk/cohere": "^3.0.18",
+    "@ai-sdk/openai": "3",
+    "ai": "6",
+    "picocolors": "^1.1.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
