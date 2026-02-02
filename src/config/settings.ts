@@ -8,6 +8,7 @@ export interface CaleSettings {
   provider: Provider;
   model: string;
   apiKey?: string;
+  ttsModel?: string;
 }
 
 const DEFAULT_SETTINGS: CaleSettings = {
@@ -15,7 +16,7 @@ const DEFAULT_SETTINGS: CaleSettings = {
   model: "gpt-4o",
 };
 
-function getConfigDir(): string {
+export function getConfigDir(): string {
   const env = process.env.CALE_CONFIG_DIR;
   if (env) return env;
   const base = platform() === "win32" ? process.env.APPDATA ?? homedir() : homedir();
@@ -48,6 +49,7 @@ export function loadSettings(): CaleSettings {
       provider: (parsed.provider ?? DEFAULT_SETTINGS.provider) as Provider,
       model: parsed.model ?? DEFAULT_SETTINGS.model,
       apiKey: parsed.apiKey,
+      ttsModel: parsed.ttsModel,
     };
   } catch {
     _settings = { ...DEFAULT_SETTINGS };

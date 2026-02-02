@@ -8,6 +8,7 @@ Commands:
   /help     Show this help
   /config   Show provider and model
   /model    Switch model (usage: /model gpt-4o)
+  /speak    Toggle text-to-speech (auto-approve speak tool)
   /onboard  Re-run setup wizard
   /clear    Clear conversation
   /exit     Quit

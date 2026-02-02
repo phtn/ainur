@@ -1,7 +1,7 @@
 import { createReadline } from "./readline.ts";
 import { resolveModel } from "../agent/config.ts";
 import { runAgent } from "../agent/loop.ts";
-import { setApprovalCallback } from "../tools/index.ts";
+import { setApprovalCallback, speakText } from "../tools/index.ts";
 import { loadSettings } from "../config/settings.ts";
 import type { Provider } from "../config/settings.ts";
 import { handleHelp, handleConfig } from "./commands.ts";
@@ -21,8 +21,10 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
   const replRl = rl ?? createReadline();
   let messages: ModelMessage[] = [];
   let modelOverride: { provider?: Provider; model?: string } | undefined;
+  let speechEnabled = false;
 
   setApprovalCallback(async ({ tool, summary }) => {
+    if (tool === "speak" && speechEnabled) return true;
     out.write("\n");
     out.cyan(`${summary} [y/n]: `);
     const answer = await question(replRl, "");
@@ -57,6 +59,11 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
             out.error("Usage: /model <model-id>");
           }
           break;
+        case "speak":
+        case "tts":
+          speechEnabled = !speechEnabled;
+          out.println(`Speech ${speechEnabled ? "on" : "off"}`);
+          break;
         case "clear":
           messages = [];
           out.println("Conversation cleared.");
@@ -76,13 +83,16 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
     try {
       const model = resolveModel(modelOverride);
       out.write("\n");
-      const { messages: newMessages } = await runAgent({
+      const { text: responseText, messages: newMessages } = await runAgent({
         model,
         messages,
         onChunk: (chunk) => out.write(chunk),
       });
       messages = newMessages;
       out.write("\n\n");
+      if (speechEnabled && responseText.trim()) {
+        speakText(responseText).catch(() => {});
+      }
     } catch (err) {
       out.error(err instanceof Error ? err.message : String(err));
     }

@@ -40,7 +40,9 @@ export async function main(): Promise<void> {
               ? s.model
               : key === "apiKey"
                 ? s.apiKey
-                : undefined;
+                : key === "ttsModel"
+                  ? s.ttsModel
+                  : undefined;
         console.log(v ?? "");
       } else {
         console.log(JSON.stringify(s, null, 2));
@@ -110,6 +112,12 @@ export async function main(): Promise<void> {
     return;
   }
 
+  if (args.includes("tts") && args[args.indexOf("tts") + 1] === "install") {
+    const { runTtsInstall } = await import("./cli/tts-install.ts");
+    await runTtsInstall();
+    return;
+  }
+
   if (args.includes("--help") || args.includes("-h")) {
     console.log(`
 cale - Minimal AI agent CLI
@@ -121,9 +129,10 @@ Usage:
   cale config get [key]   Get config
   cale config set k v     Set config (provider, model, apiKey)
   cale config list        List config
+  cale tts install        Install Piper TTS and default voice
   cale --dir <path>       Set workspace directory
 
-Env: OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, COHERE_API_KEY (or CO_API_KEY), CALE_WORKSPACE
+Env: OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, COHERE_API_KEY (or CO_API_KEY), CALE_WORKSPACE, CALE_TTS_MODEL (Piper .onnx path for speak)
 `);
     return;
   }
