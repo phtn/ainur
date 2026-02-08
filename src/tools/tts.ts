@@ -17,6 +17,11 @@ function getPiperModel(): string | undefined {
   );
 }
 
+/** Remove actions/reactions like *giggles* or *laughs* from text */
+function stripReactions(text: string): string {
+  return text.replace(/\*[^*]+\*/g, "").replace(/\s{2,}/g, " ").trim();
+}
+
 function getPlayCommand(): { cmd: string; args: string[] } | null {
   const plat = platform();
   if (plat === "darwin") return { cmd: "afplay", args: [] };
@@ -74,7 +79,11 @@ export const speakTool = tool({
     const wavPath = join(tmpDir, "speech.wav");
 
     try {
-      const { ok, stderr } = await runPiper(text, wavPath, modelPath);
+      const cleanText = stripReactions(text);
+      if (!cleanText) {
+        return { played: false, message: "No speakable text after filtering" };
+      }
+      const { ok, stderr } = await runPiper(cleanText, wavPath, modelPath);
       if (!ok) {
         return {
           played: false,
@@ -119,7 +128,7 @@ export const speakTool = tool({
 export async function speakText(text: string): Promise<boolean> {
   const modelPath = getPiperModel();
   if (!modelPath || !existsSync(modelPath)) return false;
-  const trimmed = text.trim();
+  const trimmed = stripReactions(text);
   if (!trimmed) return false;
 
   const tmpDir = mkdtempSync(join(tmpdir(), "cale-tts-"));

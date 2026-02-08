@@ -86,6 +86,7 @@ export function getApiKeyForProvider(provider: Provider): string | undefined {
     openrouter: process.env.OPENROUTER_API_KEY,
     cohere: process.env.COHERE_API_KEY ?? process.env.CO_API_KEY,
   };
-  const raw = env[provider] ?? (loadSettings().provider === provider ? loadSettings().apiKey : undefined);
+  const s = loadSettings();
+  const raw = env[provider] ?? (s.provider === provider ? s.apiKey : undefined);
   return typeof raw === "string" ? raw.trim() : undefined;
 }

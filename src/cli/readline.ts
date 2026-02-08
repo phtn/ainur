@@ -1,13 +1,18 @@
-import { createInterface } from "node:readline";
+import { createInterface, type Interface, type Completer } from "node:readline";
+
+export type ReadlineInstance = Interface;
 
 /**
- * Create readline interface with terminal: false to prevent character duplication
- * on some terminals (e.g. Bun, certain TTY setups).
+ * Create readline interface.
+ * Pass a completer function to enable tab completion.
  */
-export function createReadline() {
+export function createReadline(completer?: Completer): ReadlineInstance {
   return createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: false,
+    terminal: true,
+    completer,
+    historySize: 200,
+    removeHistoryDuplicates: true,
   });
 }

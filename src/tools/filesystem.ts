@@ -1,6 +1,7 @@
-import { readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { tool } from "ai";
+import pc from "picocolors";
 import { z } from "zod";
 import { requestApproval } from "./approval.ts";
 
@@ -24,9 +25,14 @@ export const readFileTool = tool({
     encoding: z.enum(["utf-8", "base64"]).optional().default("utf-8"),
   }),
   execute: async ({ path, encoding }) => {
+    process.stderr.write(pc.dim(`  ⚙ read_file ${path}\n`));
     const abs = resolvePath(path);
-    const content = readFileSync(abs, encoding as BufferEncoding);
-    return { content: String(content), path: abs };
+    if (encoding === "base64") {
+      const content = Buffer.from(await Bun.file(abs).arrayBuffer()).toString("base64");
+      return { content, path: abs };
+    }
+    const content = await Bun.file(abs).text();
+    return { content, path: abs };
   },
 });
 
@@ -41,8 +47,9 @@ export const writeFileTool = tool({
     if (!approved) {
       return { path: "", written: false, message: "User declined" };
     }
+    process.stderr.write(pc.dim(`  ⚙ write_file ${path}\n`));
     const abs = resolvePath(path);
-    writeFileSync(abs, content, "utf-8");
+    await Bun.write(abs, content);
     return { path: abs, written: true };
   },
 });
@@ -53,6 +60,7 @@ export const listDirTool = tool({
     path: z.string().optional().default(".").describe("Directory path relative to workspace"),
   }),
   execute: async ({ path }) => {
+    process.stderr.write(pc.dim(`  ⚙ list_dir ${path}\n`));
     const abs = resolvePath(path);
     const entries = readdirSync(abs, { withFileTypes: true });
     return {
@@ -72,6 +80,7 @@ export const searchFilesTool = tool({
     basePath: z.string().optional().default(".").describe("Base directory to search from"),
   }),
   execute: async ({ pattern, basePath }) => {
+    process.stderr.write(pc.dim(`  ⚙ search_files ${pattern}\n`));
     const abs = resolvePath(basePath);
     const glob = new Bun.Glob(pattern);
     const matches: string[] = [];
