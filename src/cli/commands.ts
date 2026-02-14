@@ -44,6 +44,7 @@ export function handleConfig(): void {
   const s = loadSettings();
   out.println(`provider: ${s.provider}`);
   out.println(`model: ${s.model}`);
+  if (s.ttsModel) out.println(`ttsModel: ${s.ttsModel}`);
 }
 
 export function handlePromptList(): void {
@@ -259,4 +260,3 @@ export function handleSessionRemove(args: string[]): string | null {
   }
   return null;
 }
-

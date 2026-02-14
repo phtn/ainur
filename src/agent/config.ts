@@ -1,10 +1,12 @@
-import { getSettingsWithEnv, getApiKeyForProvider } from "../config/settings.ts";
+import { getSettingsWithEnv, getApiKeyForProvider, type Provider } from "../config/settings.ts";
 import { createModel } from "./providers.ts";
+import { resolveProviderAndModel } from "./model-selection.ts";
 
 export function resolveModel(overrides?: { provider?: string; model?: string }) {
   const settings = getSettingsWithEnv();
-  const provider = (overrides?.provider ?? settings.provider) as "openai" | "anthropic" | "openrouter" | "cohere";
-  const model = overrides?.model ?? settings.model;
+  const baseProvider = (overrides?.provider ?? settings.provider) as Provider;
+  const rawModel = overrides?.model ?? settings.model;
+  const { provider, model } = resolveProviderAndModel(rawModel, baseProvider);
   const apiKey = getApiKeyForProvider(provider);
   return createModel(provider, model, apiKey);
 }

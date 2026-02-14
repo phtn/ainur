@@ -6,15 +6,19 @@ import { tmpdir } from "node:os";
 import { tool } from "ai";
 import { z } from "zod";
 import { requestApproval } from "./approval.ts";
-import { loadSettings } from "../config/settings.ts";
+import { getConfigDir, loadSettings } from "../config/settings.ts";
+
+const DEFAULT_TTS_MODEL_FILENAME = "en_US-libritts_r-medium.onnx";
 
 function getPiperModel(): string | undefined {
-  return (
+  const configured =
     process.env.CALE_TTS_MODEL ??
     process.env.CALE_PIPER_MODEL ??
     process.env.PIPER_MODEL ??
-    loadSettings().ttsModel
-  );
+    loadSettings().ttsModel;
+  if (configured) return configured;
+  const defaultPath = join(getConfigDir(), "piper", DEFAULT_TTS_MODEL_FILENAME);
+  return existsSync(defaultPath) ? defaultPath : undefined;
 }
 
 /** Remove actions/reactions like *giggles* or *laughs* from text */
@@ -68,7 +72,7 @@ export const speakTool = tool({
       const hint =
         process.env.CALE_TTS_MODEL ?? process.env.CALE_PIPER_MODEL
           ? "CALE_TTS_MODEL path does not exist"
-          : "Set CALE_TTS_MODEL to your Piper .onnx model path (e.g. ~/.local/share/piper/en_US-lessac-medium.onnx). Install: pip install piper-tts, then download a model from https://huggingface.co/rhasspy/piper-voices";
+          : "Set CALE_TTS_MODEL to your Piper .onnx model path (e.g. ~/.local/share/piper/en_US-libritts_r-medium.onnx). Install: pip install piper-tts, then download a model from https://huggingface.co/rhasspy/piper-voices";
       return {
         played: false,
         message: `Piper TTS not configured. ${hint}`,

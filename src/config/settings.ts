@@ -2,7 +2,7 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 
-export type Provider = "openai" | "anthropic" | "openrouter" | "cohere";
+export type Provider = "openai" | "anthropic" | "openrouter" | "cohere" | "ollama";
 
 export interface CaleSettings {
   provider: Provider;
@@ -85,8 +85,11 @@ export function getApiKeyForProvider(provider: Provider): string | undefined {
     anthropic: process.env.ANTHROPIC_API_KEY,
     openrouter: process.env.OPENROUTER_API_KEY,
     cohere: process.env.COHERE_API_KEY ?? process.env.CO_API_KEY,
+    ollama: process.env.OLLAMA_API_KEY,
   };
   const s = loadSettings();
-  const raw = env[provider] ?? (s.provider === provider ? s.apiKey : undefined);
+  const raw =
+    env[provider] ??
+    (provider !== "ollama" && s.provider === provider ? s.apiKey : undefined);
   return typeof raw === "string" ? raw.trim() : undefined;
 }

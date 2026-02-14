@@ -1,5 +1,6 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { getConfigDir } from "./settings.ts";
 
 export const DEFAULT_SYSTEM_PROMPT = `You are cale, a minimal AI agent that helps users with coding and tasks in their terminal.
@@ -14,6 +15,7 @@ When running commands, writing files, or speaking, wait for user approval. Be co
 
 export interface PromptsFile {
   active?: string;
+  roleFiles?: string[];
   presets: Record<string, string>;
 }
 
@@ -34,8 +36,12 @@ function loadPromptsRaw(): PromptsFile {
     const raw = readFileSync(path, "utf-8");
     const parsed = JSON.parse(raw) as Partial<PromptsFile>;
     const presets = parsed.presets && typeof parsed.presets === "object" ? parsed.presets : {};
+    const roleFiles = Array.isArray(parsed.roleFiles)
+      ? parsed.roleFiles.filter((value): value is string => typeof value === "string")
+      : undefined;
     _cache = {
       active: typeof parsed.active === "string" ? parsed.active : undefined,
+      roleFiles,
       presets,
     };
   } catch {
@@ -54,10 +60,31 @@ function savePrompts(data: PromptsFile): void {
 /** Returns the current system prompt text (active preset or built-in default). */
 export function getActiveSystemPrompt(): string {
   const data = loadPromptsRaw();
-  if (data.active && data.presets[data.active]) {
-    return data.presets[data.active]!;
-  }
-  return DEFAULT_SYSTEM_PROMPT;
+  const base =
+    data.active && data.presets[data.active]
+      ? data.presets[data.active]!
+      : DEFAULT_SYSTEM_PROMPT;
+  const rolePrompt = getPrimaryRolePrompt();
+  return rolePrompt ? `${rolePrompt}\n\n${base}` : base;
+}
+
+export function getPrimaryRolePrompt(): string {
+  const data = loadPromptsRaw();
+  const roleFiles = data.roleFiles ?? [];
+  if (roleFiles.length === 0) return "";
+  const parts = roleFiles
+    .map((file) => readRoleFile(file))
+    .filter((value): value is string => Boolean(value));
+  return parts.join("\n\n").trim();
+}
+
+function readRoleFile(filePath: string): string | null {
+  const expanded = filePath.startsWith("~")
+    ? resolve(homedir(), filePath.slice(1))
+    : resolve(filePath);
+  if (!existsSync(expanded)) return null;
+  const content = readFileSync(expanded, "utf-8").trim();
+  return content.length > 0 ? content : null;
 }
 
 export interface ListPresetsResult {

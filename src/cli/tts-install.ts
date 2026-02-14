@@ -6,7 +6,8 @@ import { getConfigDir } from "../config/settings.ts";
 import { loadSettings, saveSettings } from "../config/settings.ts";
 
 const PIPER_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main";
-const DEFAULT_MODEL = "en/en_US/lessac/medium/en_US-lessac-medium";
+const DEFAULT_MODEL = "en/en_US/libritts_r/medium/en_US-libritts_r-medium";
+const DEFAULT_MODEL_BASENAME = DEFAULT_MODEL.split("/").pop() ?? "en_US-libritts_r-medium";
 
 function runCmd(cmd: string, args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
@@ -63,34 +64,44 @@ export async function runTtsInstall(): Promise<void> {
     lastStderr = r.stderr || r.stdout || lastStderr;
   }
 
-  const piperCheck = await runCmd("piper", ["--version"]);
+  const piperCheck = await runCmd("piper", ["--help"]);
   if (!piperCheck.ok) {
-    console.error("\nPython/pip not found or piper-tts failed to install.");
-    console.error("Install Python 3 first, then run: cale tts install");
-    console.error(`  ${getPythonInstallHint()}`);
-    if (lastStderr) console.error("\nLast error:", lastStderr.slice(0, 400));
-    process.exit(1);
+    const piperShortCheck = await runCmd("piper", ["-h"]);
+    if (!piperShortCheck.ok) {
+      console.error("\nPython/pip not found or piper-tts failed to install.");
+      console.error("Install Python 3 first, then run: cale tts install");
+      console.error(`  ${getPythonInstallHint()}`);
+      const checkErr = piperCheck.stderr || piperShortCheck.stderr;
+      const finalError = checkErr || lastStderr;
+      if (finalError) console.error("\nLast error:", finalError.slice(0, 400));
+      process.exit(1);
+    }
   }
 
   const piperDir = join(getConfigDir(), "piper");
   if (!existsSync(piperDir)) mkdirSync(piperDir, { recursive: true });
 
-  const onnxPath = join(piperDir, `${DEFAULT_MODEL.split("/").pop()}.onnx`);
-  const jsonPath = join(piperDir, `${DEFAULT_MODEL.split("/").pop()}.onnx.json`);
+  const onnxPath = join(piperDir, `${DEFAULT_MODEL_BASENAME}.onnx`);
+  const jsonPath = join(piperDir, `${DEFAULT_MODEL_BASENAME}.onnx.json`);
+  const onnxExists = existsSync(onnxPath);
+  const jsonExists = existsSync(jsonPath);
 
-  if (existsSync(onnxPath)) {
+  if (onnxExists && jsonExists) {
     console.log(`Model already at ${onnxPath}`);
   } else {
-    console.log("Downloading en_US-lessac-medium voice...");
+    console.log(`Downloading ${DEFAULT_MODEL_BASENAME} voice...`);
     const onnxUrl = `${PIPER_BASE}/${DEFAULT_MODEL}.onnx`;
     const jsonUrl = `${PIPER_BASE}/${DEFAULT_MODEL}.onnx.json`;
-    const ok1 = await download(onnxUrl, onnxPath);
-    const ok2 = await download(jsonUrl, jsonPath);
+    const ok1 = onnxExists ? true : await download(onnxUrl, onnxPath);
+    const ok2 = jsonExists ? true : await download(jsonUrl, jsonPath);
     if (!ok1) {
       console.error("Failed to download model. Check your connection.");
       process.exit(1);
     }
-    if (!ok2) console.warn("Config download failed (optional).");
+    if (!ok2) {
+      console.error("Failed to download model config (.onnx.json). Check your connection.");
+      process.exit(1);
+    }
     console.log("Model downloaded.");
   }
 

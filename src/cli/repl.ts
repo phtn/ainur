@@ -29,6 +29,7 @@ import { completer } from "./completer.ts";
 import { runOnboard } from "./onboard.ts";
 import { out } from "./output.ts";
 import { createReadline } from "./readline.ts";
+import { resolveProviderAndModel } from "../agent/model-selection.ts";
 
 function question(
   rl: ReturnType<typeof createReadline>,
@@ -117,8 +118,11 @@ export async function startRepl(
           break;
         case "model":
           if (args[0]) {
-            modelOverride = { ...modelOverride, model: args[0] };
-            out.successLine(`Model set to ${args[0]}`);
+            const settings = getSettingsWithEnv();
+            const fallbackProvider = modelOverride?.provider ?? settings.provider;
+            const selection = resolveProviderAndModel(args[0], fallbackProvider);
+            modelOverride = { ...modelOverride, provider: selection.provider, model: selection.model };
+            out.successLine(`Model set to ${selection.provider}/${selection.model}`);
           } else {
             out.error("Usage: /model <model-id>");
           }

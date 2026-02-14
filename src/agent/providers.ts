@@ -37,6 +37,17 @@ export function createModel(
       });
       return cohereProvider(modelId as "command-a-03-2025");
     }
+    case "ollama": {
+      const rawBaseUrl = process.env.OLLAMA_BASE_URL ?? process.env.OLLAMA_HOST ?? "http://localhost:11434";
+      const baseUrl = rawBaseUrl.endsWith("/v1")
+        ? rawBaseUrl
+        : `${rawBaseUrl.replace(/\/$/, "")}/v1`;
+      const ollama = createOpenAI({
+        baseURL: baseUrl,
+        apiKey: key ?? "ollama",
+      });
+      return ollama(modelId);
+    }
     default: {
       throw new Error(`Unknown provider: ${provider}`);
     }

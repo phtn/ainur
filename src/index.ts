@@ -25,6 +25,7 @@ import {
   ensureSession,
 } from "./config/sessions.ts";
 import { createReadline } from "./cli/readline.ts";
+import { resolveProviderAndModel } from "./agent/model-selection.ts";
 
 function question(rl: ReturnType<typeof createReadline>, q: string): Promise<string> {
   return new Promise((resolve) => rl.question(q, resolve));
@@ -73,22 +74,31 @@ export async function main(): Promise<void> {
       }
       const s = loadSettings();
       if (key === "provider") {
-        const valid: Provider[] = ["openai", "anthropic", "openrouter", "cohere"];
+        const valid: Provider[] = ["openai", "anthropic", "openrouter", "cohere", "ollama"];
         if (!valid.includes(val as Provider)) {
           console.error(`Invalid provider. Use: ${valid.join(", ")}`);
           process.exit(1);
         }
         s.provider = val as Provider;
       } else if (key === "model") {
-        s.model = val;
+        const selection = resolveProviderAndModel(val, s.provider);
+        s.provider = selection.provider;
+        s.model = selection.model;
       } else if (key === "apiKey") {
         s.apiKey = val;
+      } else if (key === "ttsModel") {
+        s.ttsModel = val;
       } else {
         console.error(`Unknown config key: ${key}`);
         process.exit(1);
       }
       saveSettings(s);
-      console.log(`Set ${key} = ${key === "apiKey" ? "***" : val}`);
+      if (key === "model") {
+        console.log(`Set provider = ${s.provider}`);
+        console.log(`Set model = ${s.model}`);
+      } else {
+        console.log(`Set ${key} = ${key === "apiKey" ? "***" : val}`);
+      }
       return;
     }
     if (sub === "list" || !sub) {
