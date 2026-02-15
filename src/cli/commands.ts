@@ -20,6 +20,18 @@ import pc from "picocolors";
 import { tools } from "../tools/index.ts";
 import { out } from "./output.ts";
 import type { createReadline } from "./readline.ts";
+import {
+  getHeartbeatStatus,
+  runHeartbeatOnce,
+  startHeartbeatDaemon,
+  stopHeartbeatDaemon,
+} from "../services/heartbeat.ts";
+import {
+  getLaunchdStatus,
+  installHeartbeatLaunchd,
+  readHeartbeatLaunchdPlist,
+  uninstallHeartbeatLaunchd,
+} from "../services/launchd.ts";
 
 export function handleHelp(): void {
   const c = (s: string) => pc.cyan(s);
@@ -31,6 +43,7 @@ export function handleHelp(): void {
   ${c("/model")}    ${d("Switch model")} ${d("(/model gpt-4o)")}
   ${c("/prompt")}   ${d("Manage system prompts")} ${d("(list, use, add, set, show, remove)")}
   ${c("/session")}  ${d("Manage conversations")} ${d("(list, use, new, remove, current)")}
+  ${c("/heartbeat")} ${d("Heartbeat service")} ${d("(status, start, stop, once, launchd)")}
   ${c("/speak")}    ${d("Toggle text-to-speech")}
   ${c("/onboard")}  ${d("Re-run setup wizard")}
   ${c("/clear")}    ${d("Clear conversation")}
@@ -45,6 +58,10 @@ export function handleConfig(): void {
   out.println(`provider: ${s.provider}`);
   out.println(`model: ${s.model}`);
   if (s.ttsModel) out.println(`ttsModel: ${s.ttsModel}`);
+  out.println(`soulAlignment: ${s.soulAlignment !== false ? "true" : "false"}`);
+  if (typeof s.soulTemperature === "number") {
+    out.println(`soulTemperature: ${s.soulTemperature}`);
+  }
 }
 
 export function handlePromptList(): void {
@@ -259,4 +276,104 @@ export function handleSessionRemove(args: string[]): string | null {
     out.error(e instanceof Error ? e.message : String(e));
   }
   return null;
+}
+
+export async function handleHeartbeat(args: string[]): Promise<void> {
+  const sub = args[0] ?? "status";
+
+  if (sub === "launchd") {
+    const launchdSub = args[1] ?? "status";
+    if (launchdSub === "status") {
+      const status = getLaunchdStatus();
+      out.println(`supported: ${status.supported ? "yes" : "no"}`);
+      out.println(`installed: ${status.installed ? "yes" : "no"}`);
+      out.println(`loaded: ${status.loaded ? "yes" : "no"}`);
+      out.println(`label: ${status.label}`);
+      out.println(`plist: ${status.plistPath}`);
+      if (status.details) out.println(`details: ${status.details}`);
+      return;
+    }
+
+    if (launchdSub === "install") {
+      const pollArg = args.find((arg) => arg.startsWith("--poll="));
+      const poll = pollArg ? Number.parseInt(pollArg.split("=")[1] ?? "", 10) : undefined;
+      const result = installHeartbeatLaunchd({
+        heartbeatPollSeconds: Number.isFinite(poll) ? poll : undefined,
+      });
+      if (!result.ok) {
+        out.error(result.message);
+        return;
+      }
+      out.println(result.message);
+      out.println(`plist: ${result.plistPath}`);
+      return;
+    }
+
+    if (launchdSub === "uninstall") {
+      const result = uninstallHeartbeatLaunchd();
+      if (!result.ok) {
+        out.error(result.message);
+        return;
+      }
+      out.println(result.message);
+      out.println(`plist: ${result.plistPath}`);
+      return;
+    }
+
+    if (launchdSub === "print") {
+      const plist = readHeartbeatLaunchdPlist();
+      if (!plist) {
+        out.error("Heartbeat launchd plist is not installed.");
+        return;
+      }
+      out.println(plist);
+      return;
+    }
+
+    out.error("Usage: /heartbeat launchd [status|install|uninstall|print] [--poll=60]");
+    return;
+  }
+
+  if (sub === "status") {
+    const status = getHeartbeatStatus();
+    out.println(`running: ${status.running ? "yes" : "no"}`);
+    if (status.runtime) {
+      out.println(`pid: ${status.runtime.pid}`);
+      out.println(`startedAt: ${status.runtime.startedAt}`);
+      out.println(`workspace: ${status.runtime.workspace}`);
+    }
+    out.println(`state: ${status.statePath}`);
+    out.println(`log: ${status.logPath}`);
+    return;
+  }
+
+  if (sub === "start") {
+    const result = startHeartbeatDaemon();
+    if (!result.started) {
+      out.error(result.message ?? "Heartbeat daemon failed to start");
+      return;
+    }
+    out.println(`${result.message ?? "Heartbeat daemon started."} pid=${result.pid ?? "?"}`);
+    out.println(`log: ${result.logPath}`);
+    return;
+  }
+
+  if (sub === "stop") {
+    const result = stopHeartbeatDaemon();
+    if (result.stopped) out.println(result.message);
+    else out.error(result.message);
+    return;
+  }
+
+  if (sub === "once") {
+    const result = await runHeartbeatOnce({ speakUrgent: true });
+    if (result.dueCount === 0) {
+      out.println("HEARTBEAT_OK");
+      return;
+    }
+    result.runs.forEach((run) => out.println(`${run.ok ? "✓" : "✗"} ${run.title}: ${run.summary}`));
+    return;
+  }
+
+  out.error("Usage: /heartbeat [status|start|stop|once|launchd]");
 }

@@ -7,10 +7,11 @@ export type ReadlineInstance = Interface;
  * Pass a completer function to enable tab completion.
  */
 export function createReadline(completer?: Completer): ReadlineInstance {
+  const isTerminal = Boolean(process.stdin.isTTY && process.stdout.isTTY);
   return createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: true,
+    terminal: isTerminal,
     completer,
     historySize: 200,
     removeHistoryDuplicates: true,

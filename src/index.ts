@@ -26,9 +26,32 @@ import {
 } from "./config/sessions.ts";
 import { createReadline } from "./cli/readline.ts";
 import { resolveProviderAndModel } from "./agent/model-selection.ts";
+import {
+  getHeartbeatStatus,
+  runHeartbeatOnce,
+  runHeartbeatService,
+  startHeartbeatDaemon,
+  stopHeartbeatDaemon,
+} from "./services/heartbeat.ts";
+import {
+  getLaunchdStatus,
+  installHeartbeatLaunchd,
+  readHeartbeatLaunchdPlist,
+  uninstallHeartbeatLaunchd,
+} from "./services/launchd.ts";
+import { importMemoryFromSqlite } from "./services/sqlite-memory.ts";
 
 function question(rl: ReturnType<typeof createReadline>, q: string): Promise<string> {
   return new Promise((resolve) => rl.question(q, resolve));
+}
+
+function readOption(args: string[], key: string): string | undefined {
+  const kvPrefix = `${key}=`;
+  const kv = args.find((arg) => arg.startsWith(kvPrefix));
+  if (kv) return kv.slice(kvPrefix.length);
+  const idx = args.indexOf(key);
+  if (idx >= 0) return args[idx + 1];
+  return undefined;
 }
 
 export async function main(): Promise<void> {
@@ -58,6 +81,10 @@ export async function main(): Promise<void> {
                 ? s.apiKey
                 : key === "ttsModel"
                   ? s.ttsModel
+                  : key === "soulAlignment"
+                    ? s.soulAlignment
+                    : key === "soulTemperature"
+                      ? s.soulTemperature
                   : undefined;
         console.log(v ?? "");
       } else {
@@ -88,6 +115,20 @@ export async function main(): Promise<void> {
         s.apiKey = val;
       } else if (key === "ttsModel") {
         s.ttsModel = val;
+      } else if (key === "soulAlignment") {
+        const parsed = val.toLowerCase();
+        if (!["true", "false", "1", "0", "yes", "no"].includes(parsed)) {
+          console.error("soulAlignment must be true/false");
+          process.exit(1);
+        }
+        s.soulAlignment = ["true", "1", "yes"].includes(parsed);
+      } else if (key === "soulTemperature") {
+        const parsed = Number.parseFloat(val);
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 2) {
+          console.error("soulTemperature must be a number between 0 and 2");
+          process.exit(1);
+        }
+        s.soulTemperature = parsed;
       } else {
         console.error(`Unknown config key: ${key}`);
         process.exit(1);
@@ -109,20 +150,182 @@ export async function main(): Promise<void> {
     process.exit(1);
   }
 
+  if (args.includes("memory")) {
+    const memoryArgs = args.slice(args.indexOf("memory") + 1);
+    const sub = memoryArgs[0] ?? "help";
+
+    if (sub === "import-sqlite" || sub === "load-sqlite") {
+      try {
+        const dbPath = readOption(memoryArgs, "--db");
+        const entryPath = readOption(memoryArgs, "--entry") ?? readOption(memoryArgs, "--path");
+        const outputPath = readOption(memoryArgs, "--out");
+        const result = importMemoryFromSqlite({
+          dbPath,
+          entryPath,
+          outputPath,
+        });
+        console.log(`Imported ${result.entryPath} from ${result.dbPath}`);
+        console.log(`Wrote ${result.chars} chars to ${result.outputPath}`);
+        if (typeof result.updatedAt === "number") {
+          console.log(`Chunk updated_at: ${result.updatedAt}`);
+        }
+      } catch (error) {
+        console.error("cale:", error instanceof Error ? error.message : String(error));
+        process.exit(1);
+      }
+      return;
+    }
+
+    console.error("Usage: cale memory import-sqlite [--db <path>] [--entry MEMORY.md] [--out MEMORY.md]");
+    process.exit(1);
+  }
+
+  if (args.includes("heartbeat")) {
+    const heartbeatArgs = args.slice(args.indexOf("heartbeat") + 1);
+    const sub = heartbeatArgs[0] ?? "status";
+
+    if (sub === "launchd") {
+      const launchdSub = heartbeatArgs[1] ?? "status";
+      if (launchdSub === "status") {
+        const status = getLaunchdStatus();
+        console.log(`supported: ${status.supported ? "yes" : "no"}`);
+        console.log(`installed: ${status.installed ? "yes" : "no"}`);
+        console.log(`loaded: ${status.loaded ? "yes" : "no"}`);
+        console.log(`label: ${status.label}`);
+        console.log(`plist: ${status.plistPath}`);
+        if (status.details) console.log(`details: ${status.details}`);
+        return;
+      }
+
+      if (launchdSub === "install") {
+        const pollArg = heartbeatArgs.find((arg) => arg.startsWith("--poll="));
+        const poll = pollArg ? Number.parseInt(pollArg.split("=")[1] ?? "", 10) : undefined;
+        const result = installHeartbeatLaunchd({
+          heartbeatPollSeconds: Number.isFinite(poll) ? poll : undefined,
+        });
+        if (!result.ok) {
+          console.error(result.message);
+          process.exit(1);
+        }
+        console.log(result.message);
+        console.log(`plist: ${result.plistPath}`);
+        return;
+      }
+
+      if (launchdSub === "uninstall") {
+        const result = uninstallHeartbeatLaunchd();
+        if (!result.ok) {
+          console.error(result.message);
+          process.exit(1);
+        }
+        console.log(result.message);
+        console.log(`plist: ${result.plistPath}`);
+        return;
+      }
+
+      if (launchdSub === "print") {
+        const plist = readHeartbeatLaunchdPlist();
+        if (!plist) {
+          console.error("Heartbeat launchd plist is not installed.");
+          process.exit(1);
+        }
+        console.log(plist);
+        return;
+      }
+
+      console.error("Usage: cale heartbeat launchd [status|install|uninstall|print] [--poll=60]");
+      process.exit(1);
+    }
+
+    if (sub === "start") {
+      const result = startHeartbeatDaemon();
+      if (result.pid) {
+        console.log(`${result.message ?? "Heartbeat daemon started."} pid=${result.pid}`);
+      } else {
+        console.error(result.message ?? "Heartbeat daemon failed to start.");
+        process.exit(1);
+      }
+      console.log(`log: ${result.logPath}`);
+      return;
+    }
+
+    if (sub === "run") {
+      console.log("Heartbeat service running. Press Ctrl+C to stop.");
+      await runHeartbeatService();
+      return;
+    }
+
+    if (sub === "once") {
+      const result = await runHeartbeatOnce({ speakUrgent: true });
+      if (result.dueCount === 0) {
+        console.log("HEARTBEAT_OK");
+        return;
+      }
+      result.runs.forEach((run) => {
+        console.log(`${run.ok ? "✓" : "✗"} ${run.title}: ${run.summary}`);
+      });
+      if (!result.ok) process.exit(1);
+      return;
+    }
+
+    if (sub === "status") {
+      const status = getHeartbeatStatus();
+      console.log(`running: ${status.running ? "yes" : "no"}`);
+      if (status.runtime) {
+        console.log(`pid: ${status.runtime.pid}`);
+        console.log(`startedAt: ${status.runtime.startedAt}`);
+        console.log(`workspace: ${status.runtime.workspace}`);
+      }
+      console.log(`state: ${status.statePath}`);
+      console.log(`log: ${status.logPath}`);
+      return;
+    }
+
+    if (sub === "stop") {
+      const result = stopHeartbeatDaemon();
+      if (result.stopped) {
+        console.log(result.message);
+      } else {
+        console.error(result.message);
+        process.exit(1);
+      }
+      return;
+    }
+
+    console.error("Usage: cale heartbeat [start|run|once|status|stop|launchd]");
+    process.exit(1);
+  }
+
   if (promptArg !== undefined) {
     if (!isConfigured()) {
       console.error("No API key configured. Run: cale onboard");
       process.exit(1);
     }
-    const rl = createReadline();
+    const isInteractive = Boolean(process.stdin.isTTY && process.stdout.isTTY);
+    const rl = isInteractive ? createReadline() : null;
+    let pipedAnswers: string[] = [];
+    if (!isInteractive) {
+      const pipedInput = await Bun.stdin.text();
+      pipedAnswers = pipedInput
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0);
+    }
     setApprovalCallback(async ({ summary }) => {
-      process.stdout.write(`\n${summary} [y/n]: `);
-      const a = await question(rl, "");
+      out.spinner.stop();
+      if (!isInteractive) {
+        const answer = pipedAnswers.shift();
+        if (!answer) return false;
+        process.stdout.write(`\n${summary} [${answer}]\n`);
+        return answer.toLowerCase().startsWith("y");
+      }
+      const a = await question(rl!, `\n${summary} [y/n]: `);
       return a.toLowerCase().startsWith("y");
     });
     const model = resolveModel();
     const t0 = performance.now();
     let firstChunk = true;
+    let streamedText = "";
     out.spinner.start("thinking");
     const { text } = await runAgent({
       model,
@@ -132,14 +335,15 @@ export async function main(): Promise<void> {
           out.spinner.stop();
           firstChunk = false;
         }
+        streamedText += chunk;
         process.stdout.write(chunk);
       },
     });
     if (firstChunk) out.spinner.stop();
-    process.stdout.write(text);
+    if (!streamedText && text) process.stdout.write(text);
     if (!text.endsWith("\n")) process.stdout.write("\n");
     out.elapsed(performance.now() - t0);
-    rl.close();
+    rl?.close();
     return;
   }
 
@@ -279,14 +483,19 @@ export async function main(): Promise<void> {
   ${c("cale onboard")}            ${d("Run setup wizard")}
   ${c("cale -p")} ${d('"prompt"')}        ${d("One-shot prompt")}
   ${c("cale config")} ${d("get|set|list")} ${d("Manage config")}
+  ${c("cale memory import-sqlite")} ${d("--db ...")} ${d("Load memory from SQLite into markdown")}
   ${c("cale prompt")} ${d("list|use|...")} ${d("Manage system prompts")}
   ${c("cale session")} ${d("list|use|..")} ${d("Manage conversations")}
+  ${c("cale heartbeat")} ${d("start|run|...")} ${d("Heartbeat service control")}
+  ${c("cale heartbeat launchd")} ${d("status|install|...")} ${d("Install heartbeat as launchd agent")}
   ${c("cale tts install")}        ${d("Install Piper TTS")}
   ${c("cale --dir")} ${d("<path>")}       ${d("Set workspace directory")}
 
   ${pc.bold("Environment")}
   ${d("OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY,")}
-  ${d("COHERE_API_KEY (or CO_API_KEY), CALE_WORKSPACE, CALE_TTS_MODEL")}
+  ${d("COHERE_API_KEY (or CO_API_KEY), CALE_WORKSPACE, CALE_EXTRA_WORKSPACES,")}
+  ${d("CALE_TTS_MODEL,")}
+  ${d("CALE_SOUL_ALIGNMENT, CALE_SOUL_TEMPERATURE")}
 
 `);
     return;

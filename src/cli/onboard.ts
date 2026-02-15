@@ -96,12 +96,15 @@ export async function runOnboard(rl?: ReturnType<typeof createReadline>): Promis
     apiKey = keyInput.trim() || undefined;
   }
 
-  const existingTtsModel = loadSettings().ttsModel;
+  const existing = loadSettings();
+  const existingTtsModel = existing.ttsModel;
   const settings: CaleSettings = {
     provider: provider.id,
     model,
     ...(apiKey && { apiKey }),
     ...(existingTtsModel && { ttsModel: existingTtsModel }),
+    soulAlignment: existing.soulAlignment,
+    soulTemperature: existing.soulTemperature,
   };
   saveSettings(settings);
 

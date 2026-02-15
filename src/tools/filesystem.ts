@@ -1,22 +1,15 @@
-import { readdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdirSync, readdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { tool } from "ai";
 import pc from "picocolors";
 import { z } from "zod";
 import { requestApproval } from "./approval.ts";
+import {
+  getWorkspaceRoot,
+  resolveWorkspacePath,
+} from "../config/workspace.ts";
 
-export function getWorkspaceRoot(): string {
-  return process.env.CALE_WORKSPACE ?? process.cwd();
-}
-
-function resolvePath(path: string): string {
-  const root = getWorkspaceRoot();
-  const resolved = resolve(root, path);
-  if (!resolved.startsWith(resolve(root))) {
-    throw new Error(`Path ${path} is outside workspace`);
-  }
-  return resolved;
-}
+export { getWorkspaceRoot } from "../config/workspace.ts";
 
 export const readFileTool = tool({
   description: "Read the contents of a file. Use for inspecting code, configs, or any text file.",
@@ -26,7 +19,7 @@ export const readFileTool = tool({
   }),
   execute: async ({ path, encoding }) => {
     process.stderr.write(pc.dim(`  ⚙ read_file ${path}\n`));
-    const abs = resolvePath(path);
+    const abs = resolveWorkspacePath(path);
     if (encoding === "base64") {
       const content = Buffer.from(await Bun.file(abs).arrayBuffer()).toString("base64");
       return { content, path: abs };
@@ -48,7 +41,8 @@ export const writeFileTool = tool({
       return { path: "", written: false, message: "User declined" };
     }
     process.stderr.write(pc.dim(`  ⚙ write_file ${path}\n`));
-    const abs = resolvePath(path);
+    const abs = resolveWorkspacePath(path);
+    mkdirSync(dirname(abs), { recursive: true });
     await Bun.write(abs, content);
     return { path: abs, written: true };
   },
@@ -61,7 +55,7 @@ export const listDirTool = tool({
   }),
   execute: async ({ path }) => {
     process.stderr.write(pc.dim(`  ⚙ list_dir ${path}\n`));
-    const abs = resolvePath(path);
+    const abs = resolveWorkspacePath(path);
     const entries = readdirSync(abs, { withFileTypes: true });
     return {
       path: abs,
@@ -81,7 +75,7 @@ export const searchFilesTool = tool({
   }),
   execute: async ({ pattern, basePath }) => {
     process.stderr.write(pc.dim(`  ⚙ search_files ${pattern}\n`));
-    const abs = resolvePath(basePath);
+    const abs = resolveWorkspacePath(basePath);
     const glob = new Bun.Glob(pattern);
     const matches: string[] = [];
     for await (const file of glob.scan({ cwd: abs, absolute: true, onlyFiles: true })) {

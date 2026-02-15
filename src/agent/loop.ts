@@ -3,6 +3,8 @@ import type { ModelMessage } from "ai";
 import { tools, setApprovalCallback } from "../tools/index.ts";
 import type { ToolApprovalCallback } from "../tools/index.ts";
 import { getActiveSystemPrompt } from "../config/prompts.ts";
+import { distillEveryNMessages } from "../services/memory.ts";
+import { getSettingsWithEnv } from "../config/settings.ts";
 
 export interface RunAgentOptions {
   model: Parameters<typeof streamText>[0]["model"];
@@ -30,6 +32,10 @@ async function executeStream(options: {
   abortSignal?: AbortSignal;
   includeTools: boolean;
 }): Promise<RunAgentResult> {
+  const previousCount = options.messages.length;
+  const settings = getSettingsWithEnv();
+  const temperature =
+    settings.soulAlignment === false ? undefined : settings.soulTemperature;
   const result = streamText({
     model: options.model,
     system: getActiveSystemPrompt(),
@@ -37,6 +43,7 @@ async function executeStream(options: {
     tools: options.includeTools ? tools : undefined,
     stopWhen: stepCountIs(10),
     abortSignal: options.abortSignal,
+    temperature,
   });
 
   let fullText = "";
@@ -47,6 +54,7 @@ async function executeStream(options: {
 
   const response = await result.response;
   const newMessages: ModelMessage[] = [...options.messages, ...response.messages];
+  void distillEveryNMessages(previousCount, newMessages).catch(() => {});
   return { text: fullText, messages: newMessages };
 }
 

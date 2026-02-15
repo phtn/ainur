@@ -24,6 +24,7 @@ import {
   handleSessionNew,
   handleSessionRemove,
   handleSessionUse,
+  handleHeartbeat,
 } from "./commands.ts";
 import { completer } from "./completer.ts";
 import { runOnboard } from "./onboard.ts";
@@ -79,9 +80,8 @@ export async function startRepl(
   setApprovalCallback(async ({ tool, summary }) => {
     if (tool === "speak" && speechEnabled) return true;
     out.spinner.stop();
-    out.write("\n");
-    out.write(`  ${pc.yellow("?")} ${pc.cyan(summary)} ${pc.dim("[y/n]")}: `);
-    const answer = await question(replRl, "");
+    const prompt = `\n  ${pc.yellow("?")} ${pc.cyan(summary)} ${pc.dim("[y/n]")}: `;
+    const answer = await question(replRl, prompt);
     return answer.toLowerCase().startsWith("y");
   });
 
@@ -182,6 +182,9 @@ export async function startRepl(
           }
           break;
         }
+        case "heartbeat":
+          await handleHeartbeat(args);
+          break;
         case "exit":
           saveSession(currentSession, messages);
           replRl.close();

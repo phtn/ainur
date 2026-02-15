@@ -7,6 +7,7 @@ const COMMANDS = [
   "/model",
   "/prompt",
   "/session",
+  "/heartbeat",
   "/speak",
   "/tts",
   "/onboard",
@@ -16,6 +17,8 @@ const COMMANDS = [
 
 const PROMPT_SUBCOMMANDS = ["list", "use", "add", "set", "show", "remove"];
 const SESSION_SUBCOMMANDS = ["list", "use", "new", "remove", "current"];
+const HEARTBEAT_SUBCOMMANDS = ["status", "start", "stop", "once", "launchd"];
+const HEARTBEAT_LAUNCHD_SUBCOMMANDS = ["status", "install", "uninstall", "print"];
 
 /**
  * Tab completion for REPL commands.
@@ -82,6 +85,22 @@ export function completer(line: string): [string[], string] {
         const matches = names.map((n) => `${cmd} ${subCmd} ${n}`);
         return [matches, line];
       }
+    }
+  }
+
+  if (cmd === "/heartbeat") {
+    if (parts.length === 2) {
+      const matches = HEARTBEAT_SUBCOMMANDS.filter((s) => s.startsWith(sub)).map(
+        (s) => `${cmd} ${s}`
+      );
+      return [matches, line];
+    }
+    if (parts.length === 3 && parts[1] === "launchd") {
+      const partial = parts[2] ?? "";
+      const matches = HEARTBEAT_LAUNCHD_SUBCOMMANDS
+        .filter((s) => s.startsWith(partial))
+        .map((s) => `${cmd} launchd ${s}`);
+      return [matches, line];
     }
   }
 

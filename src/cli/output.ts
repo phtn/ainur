@@ -28,6 +28,8 @@ export const out = {
     _id: null as ReturnType<typeof setInterval> | null,
     _frame: 0,
     start(msg?: string) {
+      if (!process.stderr.isTTY) return;
+      if (this._id) clearInterval(this._id);
       const frames = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
       this._frame = 0;
       this._id = setInterval(() => {
@@ -39,6 +41,7 @@ export const out = {
     stop(msg?: string) {
       if (this._id) clearInterval(this._id);
       this._id = null;
+      if (!process.stderr.isTTY) return;
       process.stderr.write("\r\x1b[K");
       if (msg) process.stderr.write(`${msg}\n`);
     },

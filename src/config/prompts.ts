@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { getConfigDir } from "./settings.ts";
+import { getWorkspaceRoot } from "./workspace.ts";
 
 export const DEFAULT_SYSTEM_PROMPT = `You are cale, a minimal AI agent that helps users with coding and tasks in their terminal.
 You have access to tools for reading/writing files, listing directories, searching files, running shell commands, fetching URLs, and text-to-speech.
@@ -70,12 +71,22 @@ export function getActiveSystemPrompt(): string {
 
 export function getPrimaryRolePrompt(): string {
   const data = loadPromptsRaw();
-  const roleFiles = data.roleFiles ?? [];
+  const roleFiles =
+    data.roleFiles && data.roleFiles.length > 0
+      ? data.roleFiles
+      : getDefaultRoleFiles();
   if (roleFiles.length === 0) return "";
   const parts = roleFiles
     .map((file) => readRoleFile(file))
     .filter((value): value is string => Boolean(value));
   return parts.join("\n\n").trim();
+}
+
+function getDefaultRoleFiles(): string[] {
+  const root = getWorkspaceRoot();
+  return [join(root, "SOUL.md"), join(root, "USER.md")].filter((path) =>
+    existsSync(path)
+  );
 }
 
 function readRoleFile(filePath: string): string | null {

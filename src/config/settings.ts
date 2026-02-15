@@ -9,11 +9,15 @@ export interface CaleSettings {
   model: string;
   apiKey?: string;
   ttsModel?: string;
+  soulAlignment?: boolean;
+  soulTemperature?: number;
 }
 
 const DEFAULT_SETTINGS: CaleSettings = {
   provider: "openai",
   model: "gpt-4o",
+  soulAlignment: true,
+  soulTemperature: 0.7,
 };
 
 export function getConfigDir(): string {
@@ -50,6 +54,14 @@ export function loadSettings(): CaleSettings {
       model: parsed.model ?? DEFAULT_SETTINGS.model,
       apiKey: parsed.apiKey,
       ttsModel: parsed.ttsModel,
+      soulAlignment:
+        typeof parsed.soulAlignment === "boolean"
+          ? parsed.soulAlignment
+          : DEFAULT_SETTINGS.soulAlignment,
+      soulTemperature:
+        typeof parsed.soulTemperature === "number"
+          ? parsed.soulTemperature
+          : DEFAULT_SETTINGS.soulTemperature,
     };
   } catch {
     _settings = { ...DEFAULT_SETTINGS };
@@ -67,6 +79,16 @@ export function saveSettings(settings: CaleSettings): void {
 
 export function getSettingsWithEnv(): CaleSettings {
   const settings = loadSettings();
+  const soulAlignmentEnv = process.env.CALE_SOUL_ALIGNMENT?.trim().toLowerCase();
+  const soulAlignment =
+    soulAlignmentEnv === "true" || soulAlignmentEnv === "1"
+      ? true
+      : soulAlignmentEnv === "false" || soulAlignmentEnv === "0"
+        ? false
+        : settings.soulAlignment;
+  const soulTemperatureEnv = process.env.CALE_SOUL_TEMPERATURE?.trim();
+  const soulTemperatureParsed =
+    soulTemperatureEnv !== undefined ? Number.parseFloat(soulTemperatureEnv) : Number.NaN;
   return {
     provider: (process.env.CALE_PROVIDER as Provider | undefined) ?? settings.provider,
     model: process.env.CALE_MODEL ?? settings.model,
@@ -76,6 +98,12 @@ export function getSettingsWithEnv(): CaleSettings {
       process.env.OPENROUTER_API_KEY ??
       process.env.COHERE_API_KEY ??
       settings.apiKey,
+    ttsModel: process.env.CALE_TTS_MODEL ?? settings.ttsModel,
+    soulAlignment,
+    soulTemperature:
+      Number.isFinite(soulTemperatureParsed) && soulTemperatureParsed >= 0 && soulTemperatureParsed <= 2
+        ? soulTemperatureParsed
+        : settings.soulTemperature,
   };
 }
 
