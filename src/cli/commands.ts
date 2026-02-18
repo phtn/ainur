@@ -44,7 +44,9 @@ export function handleHelp(): void {
   ${c("/prompt")}   ${d("Manage system prompts")} ${d("(list, use, add, set, show, remove)")}
   ${c("/session")}  ${d("Manage conversations")} ${d("(list, use, new, remove, current)")}
   ${c("/heartbeat")} ${d("Heartbeat service")} ${d("(status, start, stop, once, launchd)")}
-  ${c("/speak")}    ${d("Toggle text-to-speech")}
+  ${c("/tts")}      ${d("Text-to-speech controls")} ${d("(on, off, use, ls)")}
+  ${c("/stt")}      ${d("Transcribe audio file")} ${d("(/stt [audio-file])")}
+  ${c("\\")}         ${d("Record voice (5s capture + auto-send)")}
   ${c("/onboard")}  ${d("Re-run setup wizard")}
   ${c("/clear")}    ${d("Clear conversation")}
   ${c("/exit")}     ${d("Quit")}
@@ -58,6 +60,8 @@ export function handleConfig(): void {
   out.println(`provider: ${s.provider}`);
   out.println(`model: ${s.model}`);
   if (s.ttsModel) out.println(`ttsModel: ${s.ttsModel}`);
+  if (s.ttsEndpoint) out.println(`ttsEndpoint: ${s.ttsEndpoint}`);
+  if (s.sttEndpoint) out.println(`sttEndpoint: ${s.sttEndpoint}`);
   out.println(`soulAlignment: ${s.soulAlignment !== false ? "true" : "false"}`);
   if (typeof s.soulTemperature === "number") {
     out.println(`soulTemperature: ${s.soulTemperature}`);

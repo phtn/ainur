@@ -108,5 +108,5 @@ export async function runTtsInstall(): Promise<void> {
   const s = loadSettings();
   saveSettings({ ...s, ttsModel: onnxPath });
   console.log(`\nTTS ready. Model: ${onnxPath}`);
-  console.log("Run /speak in cale to toggle speech, or ask the agent to speak.");
+  console.log("Run /tts use piper and /tts on in cale to enable auto speech.");
 }

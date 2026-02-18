@@ -3,12 +3,25 @@ import { join } from "node:path";
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 
 export type Provider = "openai" | "anthropic" | "openrouter" | "cohere" | "ollama";
+export type TtsProvider = "endpoint" | "piper";
+
+function normalizeTtsProvider(value: unknown): TtsProvider | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "endpoint" || normalized === "piper") {
+    return normalized;
+  }
+  return undefined;
+}
 
 export interface CaleSettings {
   provider: Provider;
   model: string;
   apiKey?: string;
   ttsModel?: string;
+  ttsEndpoint?: string;
+  ttsProvider?: TtsProvider;
+  sttEndpoint?: string;
   soulAlignment?: boolean;
   soulTemperature?: number;
 }
@@ -16,6 +29,7 @@ export interface CaleSettings {
 const DEFAULT_SETTINGS: CaleSettings = {
   provider: "openai",
   model: "gpt-4o",
+  sttEndpoint: "http://localhost:5002/api/speech-to-text",
   soulAlignment: true,
   soulTemperature: 0.7,
 };
@@ -54,6 +68,9 @@ export function loadSettings(): CaleSettings {
       model: parsed.model ?? DEFAULT_SETTINGS.model,
       apiKey: parsed.apiKey,
       ttsModel: parsed.ttsModel,
+      ttsEndpoint: parsed.ttsEndpoint,
+      ttsProvider: normalizeTtsProvider(parsed.ttsProvider),
+      sttEndpoint: parsed.sttEndpoint ?? DEFAULT_SETTINGS.sttEndpoint,
       soulAlignment:
         typeof parsed.soulAlignment === "boolean"
           ? parsed.soulAlignment
@@ -99,6 +116,9 @@ export function getSettingsWithEnv(): CaleSettings {
       process.env.COHERE_API_KEY ??
       settings.apiKey,
     ttsModel: process.env.CALE_TTS_MODEL ?? settings.ttsModel,
+    ttsEndpoint: process.env.CALE_TTS_ENDPOINT ?? settings.ttsEndpoint,
+    ttsProvider: normalizeTtsProvider(process.env.CALE_TTS_PROVIDER) ?? settings.ttsProvider,
+    sttEndpoint: process.env.CALE_STT_ENDPOINT ?? settings.sttEndpoint,
     soulAlignment,
     soulTemperature:
       Number.isFinite(soulTemperatureParsed) && soulTemperatureParsed >= 0 && soulTemperatureParsed <= 2

@@ -1,4 +1,12 @@
 import pc from "picocolors";
+import animations from "unicode-animations";
+
+const FALLBACK_SPINNER = {
+  frames: ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"],
+  interval: 80,
+};
+
+const SNAKE_SPINNER = animations.snake ?? FALLBACK_SPINNER;
 
 export const out = {
   dim: (s: string) => process.stdout.write(pc.dim(s)),
@@ -30,13 +38,13 @@ export const out = {
     start(msg?: string) {
       if (!process.stderr.isTTY) return;
       if (this._id) clearInterval(this._id);
-      const frames = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
+      const frames = SNAKE_SPINNER.frames;
       this._frame = 0;
       this._id = setInterval(() => {
         const f = frames[this._frame % frames.length];
         process.stderr.write(`\r${f}${msg ? ` ${msg}` : ""}`);
         this._frame++;
-      }, 80);
+      }, SNAKE_SPINNER.interval);
     },
     stop(msg?: string) {
       if (this._id) clearInterval(this._id);

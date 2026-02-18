@@ -40,6 +40,7 @@ import {
   uninstallHeartbeatLaunchd,
 } from "./services/launchd.ts";
 import { importMemoryFromSqlite } from "./services/sqlite-memory.ts";
+import { runSttCli } from "./cli/stt.ts";
 
 function question(rl: ReturnType<typeof createReadline>, q: string): Promise<string> {
   return new Promise((resolve) => rl.question(q, resolve));
@@ -81,11 +82,17 @@ export async function main(): Promise<void> {
                 ? s.apiKey
                 : key === "ttsModel"
                   ? s.ttsModel
+                : key === "ttsEndpoint"
+                    ? s.ttsEndpoint
+                    : key === "ttsProvider"
+                      ? s.ttsProvider
+                    : key === "sttEndpoint"
+                      ? s.sttEndpoint
                   : key === "soulAlignment"
                     ? s.soulAlignment
                     : key === "soulTemperature"
                       ? s.soulTemperature
-                  : undefined;
+                      : undefined;
         console.log(v ?? "");
       } else {
         console.log(JSON.stringify(s, null, 2));
@@ -115,6 +122,17 @@ export async function main(): Promise<void> {
         s.apiKey = val;
       } else if (key === "ttsModel") {
         s.ttsModel = val;
+      } else if (key === "ttsEndpoint") {
+        s.ttsEndpoint = val;
+      } else if (key === "ttsProvider") {
+        const normalized = val.trim().toLowerCase();
+        if (normalized !== "endpoint" && normalized !== "piper") {
+          console.error("ttsProvider must be one of: endpoint, piper");
+          process.exit(1);
+        }
+        s.ttsProvider = normalized;
+      } else if (key === "sttEndpoint") {
+        s.sttEndpoint = val;
       } else if (key === "soulAlignment") {
         const parsed = val.toLowerCase();
         if (!["true", "false", "1", "0", "yes", "no"].includes(parsed)) {
@@ -352,9 +370,46 @@ export async function main(): Promise<void> {
     return;
   }
 
-  if (args.includes("tts") && args[args.indexOf("tts") + 1] === "install") {
-    const { runTtsInstall } = await import("./cli/tts-install.ts");
-    await runTtsInstall();
+  if (args.includes("stt")) {
+    const sttArgs = args.slice(args.indexOf("stt") + 1);
+    try {
+      await runSttCli(sttArgs);
+    } catch (error) {
+      console.error("cale:", error instanceof Error ? error.message : String(error));
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (args.includes("tts")) {
+    const ttsArgs = args.slice(args.indexOf("tts") + 1);
+    const sub = ttsArgs[0];
+
+    if (sub === "install") {
+      const { runTtsInstall } = await import("./cli/tts-install.ts");
+      await runTtsInstall();
+      return;
+    }
+
+    if (sub === "endpoint") {
+      const endpoint = ttsArgs[1];
+      if (!endpoint) {
+        const current =
+          process.env.CALE_TTS_ENDPOINT ??
+          loadSettings().ttsEndpoint ??
+          "http://localhost:5002/api/text-to-speech?speakerId=hot-moody";
+        console.log(current);
+        return;
+      }
+      const s = loadSettings();
+      s.ttsEndpoint = endpoint;
+      saveSettings(s);
+      console.log(`Set ttsEndpoint = ${endpoint}`);
+      return;
+    }
+
+    console.error("Usage: cale tts install | endpoint <url>");
+    process.exit(1);
     return;
   }
 
@@ -489,12 +544,15 @@ export async function main(): Promise<void> {
   ${c("cale heartbeat")} ${d("start|run|...")} ${d("Heartbeat service control")}
   ${c("cale heartbeat launchd")} ${d("status|install|...")} ${d("Install heartbeat as launchd agent")}
   ${c("cale tts install")}        ${d("Install Piper TTS")}
+  ${c("cale tts endpoint")} ${d("<url>")} ${d("Use HTTP TTS endpoint")}
+  ${c("cale stt")} ${d("[audio-file]")}    ${d("Speech-to-text via configured endpoint")}
+  ${c("REPL hotkey: \\")}          ${d("Record voice for 5s at empty prompt, then auto-send")}
   ${c("cale --dir")} ${d("<path>")}       ${d("Set workspace directory")}
 
   ${pc.bold("Environment")}
   ${d("OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY,")}
   ${d("COHERE_API_KEY (or CO_API_KEY), CALE_WORKSPACE, CALE_EXTRA_WORKSPACES,")}
-  ${d("CALE_TTS_MODEL,")}
+  ${d("CALE_TTS_MODEL, CALE_TTS_ENDPOINT, CALE_TTS_PROVIDER, CALE_STT_ENDPOINT,")}
   ${d("CALE_SOUL_ALIGNMENT, CALE_SOUL_TEMPERATURE")}
 
 `);

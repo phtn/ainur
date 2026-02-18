@@ -8,8 +8,8 @@ const COMMANDS = [
   "/prompt",
   "/session",
   "/heartbeat",
-  "/speak",
   "/tts",
+  "/stt",
   "/onboard",
   "/clear",
   "/exit",
@@ -19,6 +19,8 @@ const PROMPT_SUBCOMMANDS = ["list", "use", "add", "set", "show", "remove"];
 const SESSION_SUBCOMMANDS = ["list", "use", "new", "remove", "current"];
 const HEARTBEAT_SUBCOMMANDS = ["status", "start", "stop", "once", "launchd"];
 const HEARTBEAT_LAUNCHD_SUBCOMMANDS = ["status", "install", "uninstall", "print"];
+const TTS_SUBCOMMANDS = ["on", "off", "use", "ls"];
+const TTS_PROVIDERS = ["moody", "piper"];
 
 /**
  * Tab completion for REPL commands.
@@ -100,6 +102,22 @@ export function completer(line: string): [string[], string] {
       const matches = HEARTBEAT_LAUNCHD_SUBCOMMANDS
         .filter((s) => s.startsWith(partial))
         .map((s) => `${cmd} launchd ${s}`);
+      return [matches, line];
+    }
+  }
+
+  if (cmd === "/tts") {
+    if (parts.length === 2) {
+      const matches = TTS_SUBCOMMANDS.filter((s) => s.startsWith(sub)).map(
+        (s) => `${cmd} ${s}`
+      );
+      return [matches, line];
+    }
+    if (parts.length === 3 && parts[1] === "use") {
+      const partial = parts[2] ?? "";
+      const matches = TTS_PROVIDERS
+        .filter((provider) => provider.startsWith(partial))
+        .map((provider) => `${cmd} use ${provider}`);
       return [matches, line];
     }
   }

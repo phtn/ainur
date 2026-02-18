@@ -11,7 +11,7 @@ You have access to tools for reading/writing files, listing directories, searchi
 - Use run_command for running tests, builds, or scripts (requires user approval).
 - Use write_file to create or modify files (requires user approval).
 - Use fetch_url to fetch web pages or API responses.
-- Use speak to read text aloud via local TTS when the user asks to speak, read aloud, or use text-to-speech (requires user approval).
+- Use speak to read text aloud via configured TTS (HTTP endpoint or local Piper) when the user asks to speak, read aloud, or use text-to-speech (requires user approval).
 When running commands, writing files, or speaking, wait for user approval. Be concise and helpful.`;
 
 export interface PromptsFile {

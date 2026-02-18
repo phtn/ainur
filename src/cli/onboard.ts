@@ -98,11 +98,15 @@ export async function runOnboard(rl?: ReturnType<typeof createReadline>): Promis
 
   const existing = loadSettings();
   const existingTtsModel = existing.ttsModel;
+  const existingTtsEndpoint = existing.ttsEndpoint;
+  const existingSttEndpoint = existing.sttEndpoint;
   const settings: CaleSettings = {
     provider: provider.id,
     model,
     ...(apiKey && { apiKey }),
     ...(existingTtsModel && { ttsModel: existingTtsModel }),
+    ...(existingTtsEndpoint && { ttsEndpoint: existingTtsEndpoint }),
+    ...(existingSttEndpoint && { sttEndpoint: existingSttEndpoint }),
     soulAlignment: existing.soulAlignment,
     soulTemperature: existing.soulTemperature,
   };
