@@ -31,6 +31,7 @@ This file maps project-specific needs to my available tools and skills.
     - **apple-notes**: For keeping quick logs or drafting longer posts.
     - **github**: For managing codebases and tracking issues.
     - **weather**: For environmental awareness.
+- **Productivity**: Read `PRODUCTIVITY.md`, `memory/YYYY-MM-DD.md`, `HEARTBEAT.md`, and `TODO.md` when helping with priorities or planning (see AGENTS.md § Productivity Assistance).
 
 ## 🧠 Reasoning Scale
 - **Routine Tasks**: `/think:low` (default).

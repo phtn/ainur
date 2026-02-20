@@ -86,3 +86,14 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
     });
   }
 }
+
+export async function runAgentTextOnly(options: Omit<RunAgentOptions, "onApprove">): Promise<RunAgentResult> {
+  const { model, messages, onChunk, abortSignal } = options;
+  return executeStream({
+    model,
+    messages,
+    onChunk,
+    abortSignal,
+    includeTools: false,
+  });
+}

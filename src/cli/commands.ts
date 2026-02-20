@@ -44,7 +44,7 @@ export function handleHelp(): void {
   ${c("/prompt")}   ${d("Manage system prompts")} ${d("(list, use, add, set, show, remove)")}
   ${c("/session")}  ${d("Manage conversations")} ${d("(list, use, new, remove, current)")}
   ${c("/heartbeat")} ${d("Heartbeat service")} ${d("(status, start, stop, once, launchd)")}
-  ${c("/tts")}      ${d("Text-to-speech controls")} ${d("(on, off, use, ls)")}
+  ${c("/tts")}      ${d("Text-to-speech controls")} ${d("(on, off, use, voice, ls)")}
   ${c("/stt")}      ${d("Transcribe audio file")} ${d("(/stt [audio-file])")}
   ${c("\\")}         ${d("Record voice (5s capture + auto-send)")}
   ${c("/onboard")}  ${d("Re-run setup wizard")}
@@ -66,6 +66,11 @@ export function handleConfig(): void {
   if (typeof s.soulTemperature === "number") {
     out.println(`soulTemperature: ${s.soulTemperature}`);
   }
+  out.println(`gatewayEnabled: ${s.gatewayEnabled !== false ? "true" : "false"}`);
+  out.println(`gatewayAutoStart: ${s.gatewayAutoStart !== false ? "true" : "false"}`);
+  if (typeof s.gatewayPort === "number") out.println(`gatewayPort: ${s.gatewayPort}`);
+  if (s.gatewayBind) out.println(`gatewayBind: ${s.gatewayBind}`);
+  if (s.gatewayToken) out.println("gatewayToken: ***");
 }
 
 export function handlePromptList(): void {

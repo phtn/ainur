@@ -19,7 +19,7 @@ const PROMPT_SUBCOMMANDS = ["list", "use", "add", "set", "show", "remove"];
 const SESSION_SUBCOMMANDS = ["list", "use", "new", "remove", "current"];
 const HEARTBEAT_SUBCOMMANDS = ["status", "start", "stop", "once", "launchd"];
 const HEARTBEAT_LAUNCHD_SUBCOMMANDS = ["status", "install", "uninstall", "print"];
-const TTS_SUBCOMMANDS = ["on", "off", "use", "ls"];
+const TTS_SUBCOMMANDS = ["on", "off", "use", "voice", "ls"];
 const TTS_PROVIDERS = ["moody", "piper"];
 
 /**
@@ -118,6 +118,14 @@ export function completer(line: string): [string[], string] {
       const matches = TTS_PROVIDERS
         .filter((provider) => provider.startsWith(partial))
         .map((provider) => `${cmd} use ${provider}`);
+      return [matches, line];
+    }
+    if (parts.length === 3 && parts[1] === "voice") {
+      const partial = parts[2] ?? "";
+      const options = ["list", "ls"];
+      const matches = options
+        .filter((opt) => opt.startsWith(partial))
+        .map((opt) => `${cmd} voice ${opt}`);
       return [matches, line];
     }
   }

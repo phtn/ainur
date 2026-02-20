@@ -30,6 +30,7 @@ import { runOnboard } from './onboard.ts'
 import { out } from './output.ts'
 import { createReadline } from './readline.ts'
 import { runSttCli, transcribeAudioFile } from './stt.ts'
+import { fetchTtsVoiceOptions, getConfiguredTtsEndpoint, getTtsVoiceIdFromEndpoint, withTtsVoice } from './tts-voice.ts'
 import { startVoiceRecording, type VoiceRecordingSession } from './voice-recorder.ts'
 
 function question(rl: ReturnType<typeof createReadline>, query: string): Promise<string> {
@@ -361,7 +362,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
           const sub = (args[0] ?? '').toLowerCase()
           if (!sub) {
             out.println(`TTS: ${speechEnabled ? 'on' : 'off'} (${toTtsProviderLabel(getConfiguredTtsProvider())})`)
-            out.println('Usage: /tts on | off | use <moody|piper> | ls')
+            out.println('Usage: /tts on | off | use <moody|piper> | voice [id|list] | ls')
             break
           }
           if (sub === 'on') {
@@ -411,7 +412,48 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
             }
             break
           }
-          out.error('Usage: /tts on | off | use <moody|piper> | ls')
+          if (sub === 'voice') {
+            const targetVoice = (args[1] ?? '').trim()
+            const shouldList = !targetVoice || targetVoice === 'list' || targetVoice === 'ls'
+            const endpoint = getConfiguredTtsEndpoint()
+
+            if (shouldList) {
+              const currentVoice = getTtsVoiceIdFromEndpoint(endpoint)
+              const result = await fetchTtsVoiceOptions(endpoint)
+              if (!result.options.length) {
+                out.error(`No voice options found. ${result.error ?? ''}`.trim())
+                break
+              }
+              out.println(`TTS endpoint: ${endpoint}`)
+              if (result.sourceUrl && result.method) {
+                out.println(`Source: ${result.method} ${result.sourceUrl}`)
+              }
+              if (currentVoice) out.println(`Current voice: ${currentVoice}`)
+              out.println('Voices:')
+              for (const option of result.options) {
+                const marker = option.id === currentVoice ? '*' : ' '
+                const suffix = option.label && option.label !== option.id ? ` (${option.label})` : ''
+                out.println(` ${marker} ${option.id}${suffix}`)
+              }
+              break
+            }
+
+            try {
+              const nextEndpoint = withTtsVoice(endpoint, targetVoice)
+              const settings = loadSettings()
+              settings.ttsEndpoint = nextEndpoint
+              saveSettings(settings)
+              out.successLine(`Voice set to ${targetVoice}`)
+              out.println(`ttsEndpoint: ${nextEndpoint}`)
+              if (process.env.CALE_TTS_ENDPOINT) {
+                out.warnLine('CALE_TTS_ENDPOINT is set and overrides config for this session.')
+              }
+            } catch (error) {
+              out.error(error instanceof Error ? error.message : String(error))
+            }
+            break
+          }
+          out.error('Usage: /tts on | off | use <moody|piper> | voice [id|list] | ls')
           break
         }
         case 'stt':

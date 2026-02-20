@@ -41,6 +41,16 @@ import {
 } from "./services/launchd.ts";
 import { importMemoryFromSqlite } from "./services/sqlite-memory.ts";
 import { runSttCli } from "./cli/stt.ts";
+import {
+  probeGatewayStatus,
+  startGatewayServer,
+} from "./services/gateway.ts";
+import {
+  fetchTtsVoiceOptions,
+  getConfiguredTtsEndpoint,
+  getTtsVoiceIdFromEndpoint,
+  withTtsVoice,
+} from "./cli/tts-voice.ts";
 
 function question(rl: ReturnType<typeof createReadline>, q: string): Promise<string> {
   return new Promise((resolve) => rl.question(q, resolve));
@@ -53,6 +63,24 @@ function readOption(args: string[], key: string): string | undefined {
   const idx = args.indexOf(key);
   if (idx >= 0) return args[idx + 1];
   return undefined;
+}
+
+function ensureGatewayAutoStart(): void {
+  const result = startGatewayServer({ auto: true });
+  if (!result.started) {
+    if (
+      result.message.includes("auto-start is disabled") ||
+      result.message.includes("Gateway is disabled") ||
+      result.message.toLowerCase().includes("in use")
+    ) {
+      return;
+    }
+    process.stderr.write(pc.dim(`gateway: ${result.message}\n`));
+    return;
+  }
+  if (!result.alreadyRunning) {
+    process.stderr.write(pc.dim(`gateway: ${result.message}\n`));
+  }
 }
 
 export async function main(): Promise<void> {
@@ -88,10 +116,22 @@ export async function main(): Promise<void> {
                       ? s.ttsProvider
                     : key === "sttEndpoint"
                       ? s.sttEndpoint
+                    : key === "sttProvider"
+                      ? s.sttProvider
                   : key === "soulAlignment"
                     ? s.soulAlignment
                     : key === "soulTemperature"
                       ? s.soulTemperature
+                      : key === "gatewayEnabled"
+                        ? s.gatewayEnabled
+                        : key === "gatewayAutoStart"
+                          ? s.gatewayAutoStart
+                          : key === "gatewayPort"
+                            ? s.gatewayPort
+                            : key === "gatewayBind"
+                              ? s.gatewayBind
+                              : key === "gatewayToken"
+                                ? s.gatewayToken
                       : undefined;
         console.log(v ?? "");
       } else {
@@ -133,6 +173,13 @@ export async function main(): Promise<void> {
         s.ttsProvider = normalized;
       } else if (key === "sttEndpoint") {
         s.sttEndpoint = val;
+      } else if (key === "sttProvider") {
+        const normalized = val.trim().toLowerCase();
+        if (normalized !== "openai" && normalized !== "endpoint") {
+          console.error("sttProvider must be one of: openai, endpoint");
+          process.exit(1);
+        }
+        s.sttProvider = normalized;
       } else if (key === "soulAlignment") {
         const parsed = val.toLowerCase();
         if (!["true", "false", "1", "0", "yes", "no"].includes(parsed)) {
@@ -147,6 +194,36 @@ export async function main(): Promise<void> {
           process.exit(1);
         }
         s.soulTemperature = parsed;
+      } else if (key === "gatewayEnabled") {
+        const normalized = val.trim().toLowerCase();
+        if (!["true", "false", "1", "0", "yes", "no"].includes(normalized)) {
+          console.error("gatewayEnabled must be true/false");
+          process.exit(1);
+        }
+        s.gatewayEnabled = ["true", "1", "yes"].includes(normalized);
+      } else if (key === "gatewayAutoStart") {
+        const normalized = val.trim().toLowerCase();
+        if (!["true", "false", "1", "0", "yes", "no"].includes(normalized)) {
+          console.error("gatewayAutoStart must be true/false");
+          process.exit(1);
+        }
+        s.gatewayAutoStart = ["true", "1", "yes"].includes(normalized);
+      } else if (key === "gatewayPort") {
+        const parsed = Number.parseInt(val, 10);
+        if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 65535) {
+          console.error("gatewayPort must be an integer between 1 and 65535");
+          process.exit(1);
+        }
+        s.gatewayPort = parsed;
+      } else if (key === "gatewayBind") {
+        const trimmed = val.trim();
+        if (!trimmed) {
+          console.error("gatewayBind cannot be empty");
+          process.exit(1);
+        }
+        s.gatewayBind = trimmed === "loopback" ? "127.0.0.1" : trimmed === "lan" ? "0.0.0.0" : trimmed;
+      } else if (key === "gatewayToken") {
+        s.gatewayToken = val.trim() || undefined;
       } else {
         console.error(`Unknown config key: ${key}`);
         process.exit(1);
@@ -314,7 +391,36 @@ export async function main(): Promise<void> {
     process.exit(1);
   }
 
+  if (args.includes("gateway")) {
+    const gatewayArgs = args.slice(args.indexOf("gateway") + 1);
+    const sub = gatewayArgs[0] ?? "status";
+
+    if (sub === "start") {
+      const result = startGatewayServer();
+      if (!result.started) {
+        console.error(result.message);
+        process.exit(1);
+      }
+      console.log(result.message);
+      return;
+    }
+
+    if (sub === "status") {
+      const status = await probeGatewayStatus();
+      console.log(`running: ${status.running ? "yes" : "no"}`);
+      if (status.host) console.log(`host: ${status.host}`);
+      if (status.port) console.log(`port: ${status.port}`);
+      if (status.url) console.log(`url: ${status.url}`);
+      if (status.running && status.startedAt) console.log(`startedAt: ${status.startedAt}`);
+      return;
+    }
+
+    console.error("Usage: cale gateway [start|status]");
+    process.exit(1);
+  }
+
   if (promptArg !== undefined) {
+    ensureGatewayAutoStart();
     if (!isConfigured()) {
       console.error("No API key configured. Run: cale onboard");
       process.exit(1);
@@ -394,11 +500,7 @@ export async function main(): Promise<void> {
     if (sub === "endpoint") {
       const endpoint = ttsArgs[1];
       if (!endpoint) {
-        const current =
-          process.env.CALE_TTS_ENDPOINT ??
-          loadSettings().ttsEndpoint ??
-          "http://localhost:5002/api/text-to-speech?speakerId=hot-moody";
-        console.log(current);
+        console.log(getConfiguredTtsEndpoint());
         return;
       }
       const s = loadSettings();
@@ -408,7 +510,45 @@ export async function main(): Promise<void> {
       return;
     }
 
-    console.error("Usage: cale tts install | endpoint <url>");
+    if (sub === "voice") {
+      const voiceIdArg = ttsArgs[1];
+      const shouldList = !voiceIdArg || voiceIdArg === "list" || voiceIdArg === "ls";
+
+      if (shouldList) {
+        const endpoint = getConfiguredTtsEndpoint();
+        const currentVoice = getTtsVoiceIdFromEndpoint(endpoint);
+        const result = await fetchTtsVoiceOptions(endpoint);
+        if (!result.options.length) {
+          console.error(`No voice options found. ${result.error ?? ""}`.trim());
+          process.exit(1);
+        }
+        console.log(`endpoint: ${endpoint}`);
+        if (result.sourceUrl && result.method) {
+          console.log(`source: ${result.method} ${result.sourceUrl}`);
+        }
+        if (currentVoice) console.log(`currentVoice: ${currentVoice}`);
+        result.options.forEach((option) => {
+          const marker = option.id === currentVoice ? "*" : " ";
+          const label = option.label && option.label !== option.id ? ` (${option.label})` : "";
+          console.log(` ${marker} ${option.id}${label}`);
+        });
+        return;
+      }
+
+      const endpoint = getConfiguredTtsEndpoint();
+      const nextEndpoint = withTtsVoice(endpoint, voiceIdArg);
+      const s = loadSettings();
+      s.ttsEndpoint = nextEndpoint;
+      saveSettings(s);
+      console.log(`Set voice = ${voiceIdArg}`);
+      console.log(`Set ttsEndpoint = ${nextEndpoint}`);
+      if (process.env.CALE_TTS_ENDPOINT) {
+        console.log("Note: CALE_TTS_ENDPOINT is set and will override saved config in this session.");
+      }
+      return;
+    }
+
+    console.error("Usage: cale tts install | endpoint <url> | voice [voice-id|list]");
     process.exit(1);
     return;
   }
@@ -542,18 +682,21 @@ export async function main(): Promise<void> {
   ${c("cale prompt")} ${d("list|use|...")} ${d("Manage system prompts")}
   ${c("cale session")} ${d("list|use|..")} ${d("Manage conversations")}
   ${c("cale heartbeat")} ${d("start|run|...")} ${d("Heartbeat service control")}
+  ${c("cale gateway")} ${d("start|status")} ${d("API gateway control")}
   ${c("cale heartbeat launchd")} ${d("status|install|...")} ${d("Install heartbeat as launchd agent")}
   ${c("cale tts install")}        ${d("Install Piper TTS")}
   ${c("cale tts endpoint")} ${d("<url>")} ${d("Use HTTP TTS endpoint")}
-  ${c("cale stt")} ${d("[audio-file]")}    ${d("Speech-to-text via configured endpoint")}
+  ${c("cale tts voice")} ${d("[voice-id|list]")} ${d("List/set endpoint voice from API options")}
+  ${c("cale stt")} ${d("[audio-file]")}    ${d("Speech-to-text via OpenAI or configured endpoint")}
   ${c("REPL hotkey: \\")}          ${d("Record voice for 5s at empty prompt, then auto-send")}
   ${c("cale --dir")} ${d("<path>")}       ${d("Set workspace directory")}
 
   ${pc.bold("Environment")}
   ${d("OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY,")}
   ${d("COHERE_API_KEY (or CO_API_KEY), CALE_WORKSPACE, CALE_EXTRA_WORKSPACES,")}
-  ${d("CALE_TTS_MODEL, CALE_TTS_ENDPOINT, CALE_TTS_PROVIDER, CALE_STT_ENDPOINT,")}
-  ${d("CALE_SOUL_ALIGNMENT, CALE_SOUL_TEMPERATURE")}
+  ${d("CALE_TTS_MODEL, CALE_TTS_ENDPOINT, CALE_TTS_PROVIDER, CALE_STT_ENDPOINT, CALE_STT_PROVIDER,")}
+  ${d("CALE_SOUL_ALIGNMENT, CALE_SOUL_TEMPERATURE,")}
+  ${d("CALE_GATEWAY_ENABLED, CALE_GATEWAY_AUTO_START, CALE_GATEWAY_PORT, CALE_GATEWAY_BIND, CALE_GATEWAY_TOKEN")}
 
 `);
     return;
@@ -563,10 +706,12 @@ export async function main(): Promise<void> {
     console.log("No API key configured. Running onboarding...\n");
     const rl = createReadline();
     await runOnboard(rl);
+    ensureGatewayAutoStart();
     await startRepl(rl);
     return;
   }
 
+  ensureGatewayAutoStart();
   await startRepl();
 }
 

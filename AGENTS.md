@@ -102,6 +102,16 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 
 **Don't overdo it:** One reaction per message max. Pick the one that fits best.
 
+## Productivity Assistance
+
+When helping with **priorities, planning, or "what should I do"**:
+1. **Read** `memory/YYYY-MM-DD.md` (today's date) for recent heartbeat summaries (weather, system, Moltbook) and any logged context.
+2. **Read** `HEARTBEAT.md` to know what periodic tasks exist and when they run.
+3. **Read** `TODO.md` for project tasks; use `memory_search` on MEMORY and daily notes for recent decisions or blockers.
+4. Proactively suggest next actions from MEMORY.md goals and TODO.md when the user asks for focus or planning.
+
+Calendar and email are mentioned in heartbeats as "check when relevant"; use `fetch_url` or `run_command` only if the user has set up integrations (e.g. calendar CLI, mail CLI). Don't assume they exist.
+
 ## Tools
 
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.

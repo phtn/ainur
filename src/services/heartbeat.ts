@@ -108,6 +108,7 @@ function toTaskKey(title: string): string {
   if (lower.includes("memory")) return "memory_compaction";
   if (lower.includes("weather")) return "weather";
   if (lower.includes("system")) return "system_health";
+  if (lower.includes("current events") || lower.includes("current_events")) return "current_events";
   return lower.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 
@@ -130,6 +131,12 @@ function fallbackTasks(): HeartbeatTask[] {
       title: "Weather & Context",
       intervalSeconds: 3 * 60 * 60,
       description: "Track local weather context for Asia/Manila.",
+    },
+    {
+      key: "current_events",
+      title: "Current Events",
+      intervalSeconds: 6 * 60 * 60,
+      description: "Brief world-news headline summary.",
     },
   ];
 }
@@ -385,12 +392,80 @@ async function runSystemHealthTask(): Promise<HeartbeatTaskRun> {
   };
 }
 
+const CURRENT_EVENTS_RSS_URL = "https://www.theinformation.com/feed";
+const CURRENT_EVENTS_MAX_HEADLINES = 7;
+const CURRENT_EVENTS_HEADLINE_MAX_LEN = 120;
+
+function parseFeedTitles(xml: string): string[] {
+  const titles: string[] = [];
+  // The Information uses Atom (<entry>), not RSS (<item>)
+  const blocks = xml.split(/<\/?entry\s*>/i).filter((_, i) => i > 0 && i % 2 === 1);
+  for (const block of blocks) {
+    if (titles.length >= CURRENT_EVENTS_MAX_HEADLINES) break;
+    if (!block) continue;
+    const titleMatch = block.match(/<title[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>/i);
+    if (!titleMatch) continue;
+    let raw = (titleMatch[1] ?? "").trim();
+    raw = raw
+      .replace(/\s+/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'");
+    if (raw.length > CURRENT_EVENTS_HEADLINE_MAX_LEN) {
+      raw = raw.slice(0, CURRENT_EVENTS_HEADLINE_MAX_LEN - 1) + "…";
+    }
+    if (raw.length > 0) titles.push(raw);
+  }
+  return titles;
+}
+
+async function runCurrentEventsTask(): Promise<HeartbeatTaskRun> {
+  try {
+    const res = await fetch(CURRENT_EVENTS_RSS_URL, {
+      headers: { "User-Agent": "cale/0.1.0" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      return {
+        key: "current_events",
+        title: "Current Events",
+        ok: false,
+        summary: `Current events fetch failed (${res.status})`,
+      };
+    }
+    const xml = await res.text();
+    const headlines = parseFeedTitles(xml);
+    const summary =
+      headlines.length > 0
+        ? `Fetched ${headlines.length} world headlines.`
+        : "No headlines parsed.";
+    const bulletList = headlines.length > 0 ? headlines.map((h) => `- ${h}`).join("\n") : "- No items.";
+    await appendDailyMemory(`## Heartbeat Current Events\n${bulletList}`);
+    return {
+      key: "current_events",
+      title: "Current Events",
+      ok: true,
+      summary,
+    };
+  } catch (error) {
+    return {
+      key: "current_events",
+      title: "Current Events",
+      ok: false,
+      summary: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 async function executeTask(task: HeartbeatTask): Promise<HeartbeatTaskRun> {
   try {
     if (task.key === "moltbook") return await runMoltbookTask();
     if (task.key === "memory_compaction") return await runMemoryCompactionTask();
     if (task.key === "weather") return await runWeatherTask();
     if (task.key === "system_health") return await runSystemHealthTask();
+    if (task.key === "current_events") return await runCurrentEventsTask();
     return {
       key: task.key,
       title: task.title,

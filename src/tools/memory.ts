@@ -17,6 +17,7 @@ const coreAliasSchema = z.enum([
   "HEARTBEAT",
   "MAP",
   "MEMORY",
+  "PRODUCTIVITY",
   "RECONSTRUCTION",
   "SOUL",
   "TODO",

@@ -22,5 +22,10 @@ Each heartbeat, I check `memory/heartbeat-state.json`. If `now - lastCheck > int
 - **Task**: Run `openclaw status` and check `gateway config.get` for any drift.
 - **Goal**: Ensure the Ainur's vessel is stable.
 
+## 5. Current Events 🌍
+- **Interval**: 6 hours
+- **Task**: Fetch brief headlines from https://www.theinformation.com/feed and append to daily memory.
+- **Goal**: Keep a short, low-noise sense of what’s new at The Information.
+
 ---
 *If no tasks are due, I reply HEARTBEAT_OK.*

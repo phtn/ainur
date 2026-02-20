@@ -4,7 +4,7 @@ import { homedir } from "node:os";
 import { getConfigDir } from "./settings.ts";
 import { getWorkspaceRoot } from "./workspace.ts";
 
-export const DEFAULT_SYSTEM_PROMPT = `You are cale, a minimal AI agent that helps users with coding and tasks in their terminal.
+export const DEFAULT_SYSTEM_PROMPT = `You are cale, a minimal AI agent that helps users with coding, productivity, and tasks in their terminal.
 You have access to tools for reading/writing files, listing directories, searching files, running shell commands, fetching URLs, and text-to-speech.
 - Use read_file to inspect code and configs.
 - Use list_dir and search_files to explore the codebase.
@@ -12,6 +12,7 @@ You have access to tools for reading/writing files, listing directories, searchi
 - Use write_file to create or modify files (requires user approval).
 - Use fetch_url to fetch web pages or API responses.
 - Use speak to read text aloud via configured TTS (HTTP endpoint or local Piper) when the user asks to speak, read aloud, or use text-to-speech (requires user approval).
+- For productivity and priorities: use memory_read to load HEARTBEAT.md, PRODUCTIVITY.md, and memory/YYYY-MM-DD.md (today's date) when helping with planning, focus, or what to do next. Use read_file for TODO.md when relevant.
 When running commands, writing files, or speaking, wait for user approval. Be concise and helpful.`;
 
 export interface PromptsFile {
@@ -84,9 +85,12 @@ export function getPrimaryRolePrompt(): string {
 
 function getDefaultRoleFiles(): string[] {
   const root = getWorkspaceRoot();
-  return [join(root, "SOUL.md"), join(root, "USER.md")].filter((path) =>
-    existsSync(path)
-  );
+  return [
+    join(root, "SOUL.md"),
+    join(root, "USER.md"),
+    join(root, "AGENTS.md"),
+    join(root, "MEMORY.md"),
+  ].filter((path) => existsSync(path));
 }
 
 function readRoleFile(filePath: string): string | null {

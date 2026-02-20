@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { basename } from "node:path";
-import { getConfigDir, loadSettings } from "../config/settings.ts";
+import { getConfigDir, loadSettings, getSettingsWithEnv } from "../config/settings.ts";
 
 interface SttArgs {
   filePath?: string;
@@ -19,6 +19,11 @@ const STT_USAGE =
 const DEFAULT_STT_ENDPOINT = "http://localhost:5002/api/speech-to-text";
 const DEFAULT_STT_BASENAME = "stt-input";
 const DEFAULT_STT_EXTENSIONS = [".webm", ".m4a", ".wav", ".mp3", ".ogg", ".mp4"];
+
+function getOpenAiApiKey(): string | undefined {
+  const settings = getSettingsWithEnv();
+  return settings.apiKey ?? process.env.OPENAI_API_KEY;
+}
 
 function parseSttArgs(args: string[]): SttArgs {
   const parsed: SttArgs = {
@@ -85,6 +90,13 @@ function getSttEndpoint(override?: string): string | undefined {
   return endpoint.trim() || DEFAULT_STT_ENDPOINT;
 }
 
+function getSttProvider(): "openai" | "endpoint" {
+  const env = process.env.CALE_STT_PROVIDER?.trim().toLowerCase();
+  if (env === "openai" || env === "endpoint") return env;
+  const settings = loadSettings();
+  return settings.sttProvider ?? "openai";
+}
+
 function getDefaultSttAudioFilePath(): string {
   const runtimeDir = join(getConfigDir(), "runtime");
   for (const ext of DEFAULT_STT_EXTENSIONS) {
@@ -97,6 +109,43 @@ function getDefaultSttAudioFilePath(): string {
 interface SttResponse {
   contentType: string;
   payload: string | { text?: string; transcript?: string };
+}
+
+async function transcribeWithOpenAi(filePath: string): Promise<string> {
+  const apiKey = getOpenAiApiKey();
+  if (!apiKey) {
+    throw new Error(
+      "OpenAI API key not found. Set OPENAI_API_KEY or configure it with: cale config set apiKey <key>"
+    );
+  }
+
+  if (!existsSync(filePath)) {
+    throw new Error(`Audio file not found: ${filePath}`);
+  }
+
+  const form = new FormData();
+  form.append("file", Bun.file(filePath), basename(filePath));
+  form.append("model", "whisper-1");
+
+  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: form,
+  });
+
+  if (!response.ok) {
+    const errBody = trimBody(await response.text(), 300);
+    throw new Error(`OpenAI Whisper request failed (${response.status}): ${errBody}`);
+  }
+
+  const result = (await response.json()) as { text?: string };
+  const transcript = result.text?.trim();
+  if (!transcript) {
+    throw new Error("OpenAI Whisper returned an empty transcript.");
+  }
+  return transcript;
 }
 
 async function postAudioForTranscription(
@@ -142,6 +191,12 @@ async function postAudioForTranscription(
 export async function transcribeAudioFile(
   options: TranscribeAudioFileOptions
 ): Promise<string> {
+  const provider = getSttProvider();
+
+  if (provider === "openai") {
+    return transcribeWithOpenAi(options.filePath);
+  }
+
   const endpoint = getSttEndpoint(options.endpoint);
   if (!endpoint) {
     throw new Error(
@@ -181,6 +236,14 @@ export async function runSttCli(args: string[]): Promise<void> {
     throw new Error(
       `${STT_USAGE}\nNo audio file found. Press '\\' in REPL to record first, or pass a file path.`
     );
+  }
+
+  const provider = getSttProvider();
+
+  if (provider === "openai") {
+    const transcript = await transcribeWithOpenAi(filePath);
+    console.log(transcript);
+    return;
   }
 
   const endpoint = getSttEndpoint(parsed.endpoint);
