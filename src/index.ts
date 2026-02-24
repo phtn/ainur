@@ -176,7 +176,7 @@ export async function main(): Promise<void> {
       } else if (key === "sttProvider") {
         const normalized = val.trim().toLowerCase();
         if (normalized !== "openai" && normalized !== "endpoint") {
-          console.error("sttProvider must be one of: openai, endpoint");
+          console.error("sttProvider must be one of: endpoint, openai");
           process.exit(1);
         }
         s.sttProvider = normalized;
@@ -687,7 +687,7 @@ export async function main(): Promise<void> {
   ${c("cale tts install")}        ${d("Install Piper TTS")}
   ${c("cale tts endpoint")} ${d("<url>")} ${d("Use HTTP TTS endpoint")}
   ${c("cale tts voice")} ${d("[voice-id|list]")} ${d("List/set endpoint voice from API options")}
-  ${c("cale stt")} ${d("[audio-file]")}    ${d("Speech-to-text via OpenAI or configured endpoint")}
+  ${c("cale stt")} ${d("[audio-file]")}    ${d("Speech-to-text via local Whisper (file or interactive recording)")}
   ${c("REPL hotkey: \\")}          ${d("Record voice for 5s at empty prompt, then auto-send")}
   ${c("cale --dir")} ${d("<path>")}       ${d("Set workspace directory")}
 

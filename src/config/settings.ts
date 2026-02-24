@@ -18,7 +18,7 @@ function normalizeTtsProvider(value: unknown): TtsProvider | undefined {
 function normalizeSttProvider(value: unknown): SttProvider | undefined {
   if (typeof value !== 'string') return undefined
   const normalized = value.trim().toLowerCase()
-  if (normalized === 'openai' || normalized === 'endpoint') {
+  if (normalized === 'endpoint') {
     return normalized
   }
   return undefined
@@ -72,11 +72,17 @@ export interface CaleSettings {
   massive?: string
 }
 
+// Rhasspy defaults: STT + TTS on localhost:5002
+const RHASSPY_STT = 'http://localhost:12101/api/listen-for-command'
+const RHASSPY_TTS = 'http://localhost:5002/api/text-to-speech?speakerId=hot-moody'
+
 const DEFAULT_SETTINGS: CaleSettings = {
   provider: 'cohere',
   model: 'command-a-03-2025',
-  sttProvider: 'openai',
-  sttEndpoint: 'http://localhost:5002/api/speech-to-text',
+  ttsProvider: 'endpoint',
+  ttsEndpoint: RHASSPY_TTS,
+  sttProvider: 'endpoint',
+  sttEndpoint: RHASSPY_STT,
   soulAlignment: true,
   soulTemperature: 0.8,
   gatewayEnabled: true,
@@ -119,8 +125,8 @@ export function loadSettings(): CaleSettings {
       model: parsed.model ?? DEFAULT_SETTINGS.model,
       apiKey: parsed.apiKey,
       ttsModel: parsed.ttsModel,
-      ttsEndpoint: parsed.ttsEndpoint,
-      ttsProvider: normalizeTtsProvider(parsed.ttsProvider),
+      ttsEndpoint: parsed.ttsEndpoint ?? DEFAULT_SETTINGS.ttsEndpoint,
+      ttsProvider: normalizeTtsProvider(parsed.ttsProvider) ?? DEFAULT_SETTINGS.ttsProvider,
       sttProvider: normalizeSttProvider(parsed.sttProvider) ?? DEFAULT_SETTINGS.sttProvider,
       sttEndpoint: parsed.sttEndpoint ?? DEFAULT_SETTINGS.sttEndpoint,
       soulAlignment: typeof parsed.soulAlignment === 'boolean' ? parsed.soulAlignment : DEFAULT_SETTINGS.soulAlignment,

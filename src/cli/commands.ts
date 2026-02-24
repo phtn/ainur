@@ -61,6 +61,7 @@ export function handleConfig(): void {
   out.println(`model: ${s.model}`);
   if (s.ttsModel) out.println(`ttsModel: ${s.ttsModel}`);
   if (s.ttsEndpoint) out.println(`ttsEndpoint: ${s.ttsEndpoint}`);
+  out.println(`sttProvider: ${s.sttProvider ?? "endpoint"}`);
   if (s.sttEndpoint) out.println(`sttEndpoint: ${s.sttEndpoint}`);
   out.println(`soulAlignment: ${s.soulAlignment !== false ? "true" : "false"}`);
   if (typeof s.soulTemperature === "number") {

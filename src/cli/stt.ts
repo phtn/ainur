@@ -1,100 +1,50 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { basename } from "node:path";
-import { getConfigDir, loadSettings, getSettingsWithEnv } from "../config/settings.ts";
-
-interface SttArgs {
-  filePath?: string;
-  endpoint?: string;
-  help: boolean;
-}
+import { getConfigDir } from "../config/settings.ts";
+import { STT_Service } from "../services/stt.ts";
+import { transcribeAudioFile as vcrTranscribeAudioFile } from "../services/vcr.ts";
 
 export interface TranscribeAudioFileOptions {
   filePath: string;
-  endpoint?: string;
 }
 
-const STT_USAGE =
-  "Usage: cale stt [audio-file] [--endpoint <url>]";
-const DEFAULT_STT_ENDPOINT = "http://localhost:5002/api/speech-to-text";
+const STT_USAGE = "Usage: cale stt [audio-file]\n  No file: start interactive recording (press q to finish).";
 const DEFAULT_STT_BASENAME = "stt-input";
 const DEFAULT_STT_EXTENSIONS = [".webm", ".m4a", ".wav", ".mp3", ".ogg", ".mp4"];
 
-function getOpenAiApiKey(): string | undefined {
-  const settings = getSettingsWithEnv();
-  return settings.apiKey ?? process.env.OPENAI_API_KEY;
+interface SttArgs {
+  filePath?: string;
+  help: boolean;
 }
 
 function parseSttArgs(args: string[]): SttArgs {
-  const parsed: SttArgs = {
-    help: false,
-  };
+  const parsed: SttArgs = { help: false };
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i] ?? "";
-
     if (arg === "--help" || arg === "-h") {
       parsed.help = true;
       continue;
     }
-
     if (arg === "--file") {
       parsed.filePath = args[i + 1];
       i++;
       continue;
     }
-
     if (arg.startsWith("--file=")) {
       parsed.filePath = arg.slice("--file=".length);
       continue;
     }
-
-    if (arg === "--endpoint") {
-      parsed.endpoint = args[i + 1];
-      i++;
-      continue;
-    }
-
-    if (arg.startsWith("--endpoint=")) {
-      parsed.endpoint = arg.slice("--endpoint=".length);
-      continue;
-    }
-
     if (arg.startsWith("--")) {
       throw new Error(`Unknown option: ${arg}`);
     }
-
     if (!parsed.filePath) {
       parsed.filePath = arg;
       continue;
     }
-
     throw new Error(`Unexpected argument: ${arg}`);
   }
-
   return parsed;
-}
-
-function trimBody(body: string, maxChars: number): string {
-  if (body.length <= maxChars) return body;
-  return `${body.slice(0, maxChars)}...`;
-}
-
-function getSttEndpoint(override?: string): string | undefined {
-  if (override?.trim()) return override.trim();
-  const settings = loadSettings();
-  const endpoint =
-    process.env.CALE_STT_ENDPOINT ??
-    settings.sttEndpoint ??
-    DEFAULT_STT_ENDPOINT;
-  return endpoint.trim() || DEFAULT_STT_ENDPOINT;
-}
-
-function getSttProvider(): "openai" | "endpoint" {
-  const env = process.env.CALE_STT_PROVIDER?.trim().toLowerCase();
-  if (env === "openai" || env === "endpoint") return env;
-  const settings = loadSettings();
-  return settings.sttProvider ?? "openai";
 }
 
 function getDefaultSttAudioFilePath(): string {
@@ -106,122 +56,9 @@ function getDefaultSttAudioFilePath(): string {
   return join(runtimeDir, `${DEFAULT_STT_BASENAME}.webm`);
 }
 
-interface SttResponse {
-  contentType: string;
-  payload: string | { text?: string; transcript?: string };
-}
-
-async function transcribeWithOpenAi(filePath: string): Promise<string> {
-  const apiKey = getOpenAiApiKey();
-  if (!apiKey) {
-    throw new Error(
-      "OpenAI API key not found. Set OPENAI_API_KEY or configure it with: cale config set apiKey <key>"
-    );
-  }
-
-  if (!existsSync(filePath)) {
-    throw new Error(`Audio file not found: ${filePath}`);
-  }
-
-  const form = new FormData();
-  form.append("file", Bun.file(filePath), basename(filePath));
-  form.append("model", "whisper-1");
-
-  const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: form,
-  });
-
-  if (!response.ok) {
-    const errBody = trimBody(await response.text(), 300);
-    throw new Error(`OpenAI Whisper request failed (${response.status}): ${errBody}`);
-  }
-
-  const result = (await response.json()) as { text?: string };
-  const transcript = result.text?.trim();
-  if (!transcript) {
-    throw new Error("OpenAI Whisper returned an empty transcript.");
-  }
-  return transcript;
-}
-
-async function postAudioForTranscription(
-  filePath: string,
-  endpoint: string
-): Promise<SttResponse> {
-  if (!existsSync(filePath)) {
-    throw new Error(`Audio file not found: ${filePath}`);
-  }
-
-  const form = new FormData();
-  form.append("file", Bun.file(filePath), basename(filePath));
-
-  const response = await fetch(endpoint, {
-    method: "POST",
-    body: form,
-  });
-
-  const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
-
-  if (!response.ok) {
-    const errBody = trimBody(await response.text(), 300);
-    throw new Error(`STT request failed (${response.status}): ${errBody}`);
-  }
-
-  if (contentType.includes("application/json")) {
-    const payload = (await response.json()) as {
-      text?: string;
-      transcript?: string;
-    };
-    return {
-      contentType,
-      payload,
-    };
-  }
-
-  return {
-    contentType,
-    payload: await response.text(),
-  };
-}
-
-export async function transcribeAudioFile(
-  options: TranscribeAudioFileOptions
-): Promise<string> {
-  const provider = getSttProvider();
-
-  if (provider === "openai") {
-    return transcribeWithOpenAi(options.filePath);
-  }
-
-  const endpoint = getSttEndpoint(options.endpoint);
-  if (!endpoint) {
-    throw new Error(
-      "STT endpoint is not configured. Set it with: cale config set sttEndpoint <url>"
-    );
-  }
-
-  const result = await postAudioForTranscription(options.filePath, endpoint);
-
-  if (result.contentType.includes("application/json")) {
-    const payload = result.payload as { text?: string; transcript?: string };
-    const transcript = payload.text?.trim() || payload.transcript?.trim() || "";
-    if (!transcript) {
-      throw new Error(
-        "STT response JSON must include `text` or `transcript`."
-      );
-    }
-    return transcript;
-  }
-
-  const text = String(result.payload).trim();
-  if (!text) {
-    throw new Error("STT endpoint returned an empty response.");
-  }
-  return text;
+/** Transcribe an audio file using the new STT service (local Whisper via vcr). */
+export async function transcribeAudioFile(options: TranscribeAudioFileOptions): Promise<string> {
+  return vcrTranscribeAudioFile(options.filePath, { service: "whisper" });
 }
 
 export async function runSttCli(args: string[]): Promise<void> {
@@ -231,46 +68,23 @@ export async function runSttCli(args: string[]): Promise<void> {
     console.log(STT_USAGE);
     return;
   }
+
   const filePath = parsed.filePath ?? getDefaultSttAudioFilePath();
-  if (!existsSync(filePath)) {
-    throw new Error(
-      `${STT_USAGE}\nNo audio file found. Press '\\' in REPL to record first, or pass a file path.`
-    );
+  const hasExplicitFile = Boolean(parsed.filePath);
+  const defaultFileExists = !hasExplicitFile && existsSync(filePath);
+
+  if (hasExplicitFile && !existsSync(filePath)) {
+    throw new Error(`${STT_USAGE}\nFile not found: ${filePath}`);
   }
 
-  const provider = getSttProvider();
-
-  if (provider === "openai") {
-    const transcript = await transcribeWithOpenAi(filePath);
+  if (hasExplicitFile || defaultFileExists) {
+    const transcript = await vcrTranscribeAudioFile(filePath, { service: "whisper" });
     console.log(transcript);
     return;
   }
 
-  const endpoint = getSttEndpoint(parsed.endpoint);
-  if (!endpoint) {
-    throw new Error(
-      "STT endpoint is not configured. Set it with: cale config set sttEndpoint <url>"
-    );
-  }
-
-  const result = await postAudioForTranscription(
-    filePath,
-    endpoint
-  );
-
-  if (result.contentType.includes("application/json")) {
-    const payload = result.payload as { text?: string; transcript?: string };
-    const transcript = payload.text?.trim() || payload.transcript?.trim() || "";
-    if (!transcript) {
-      throw new Error("STT response JSON must include `text` or `transcript`.");
-    }
-    console.log(transcript);
-    return;
-  }
-
-  const text = String(result.payload).trim();
-  if (!text) {
-    throw new Error("STT endpoint returned an empty response.");
-  }
-  console.log(text);
+  // No file: interactive recording via new STT service
+  const sttService = new STT_Service();
+  const transcript = await sttService.startRecording();
+  console.log(transcript);
 }

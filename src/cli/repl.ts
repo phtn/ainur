@@ -1,4 +1,5 @@
 import type { ModelMessage } from 'ai'
+import { statSync } from 'node:fs'
 import { emitKeypressEvents } from 'node:readline'
 import pc from 'picocolors'
 import animations from 'unicode-animations'
@@ -59,7 +60,7 @@ interface PromptRightIndicator {
 }
 
 function toTtsProviderLabel(provider: TtsProvider): string {
-  return provider === 'endpoint' ? 'moody' : 'piper'
+  return provider === 'endpoint' ? 'rhasspy' : 'piper'
 }
 
 function makePrompt(): string {
@@ -233,34 +234,54 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
       void (async () => {
         let active: VoiceRecordingSession | null = null
         try {
-          out.println('Starting recorder...')
           active = await startVoiceRecording({
             onReady: () => {
-              out.successLine(`Ready to record. Capturing for ${VOICE_CAPTURE_DURATION_SECONDS} seconds...`)
+              out.spinner.start(`Ϙ `)
             }
           })
           voiceRecording = active
-          out.println(`Recording via ${active.recorder}.`)
+          out.println(`✦`)
           await waitForVoiceCaptureWindow()
           if (voiceRecording !== active) return
-          out.println('Stopping recording...')
+          out.spinner.stop()
           await active.stop()
-          out.println('Transcribing...')
+          let fileSize = 0
+          try {
+            fileSize = statSync(active.filePath).size
+          } catch {
+            /* ignore */
+          }
+          const minBytesForFiveSec = 50_000
+          if (fileSize < minBytesForFiveSec) {
+            out.spinner.stop()
+            out.error(
+              'No audio captured (file too small). Check microphone, input device, and permissions (e.g. Terminal → Input).'
+            )
+            return
+          }
+          out.println('···')
+
           const transcript = await transcribeAudioFile({
             filePath: active.filePath
           })
           const text = transcript.trim()
           if (!text) {
-            out.error('Voice transcription was empty.')
+            out.spinner.stop()
+            out.error(
+              'Voice transcription was empty. Audio was captured but nothing was recognized. Try speaking clearly or check CALE_WHISPER_CLI.'
+            )
             return
           }
-          out.successLine('Voice captured. Sending...')
+          out.spinner.stop()
+          out.println('✓')
           replRl.resume()
           replRl.write(text)
           replRl.write('\n')
         } catch (error) {
+          out.spinner.stop()
           out.error(error instanceof Error ? error.message : String(error))
         } finally {
+          out.spinner.stop()
           clearVoiceCaptureWindow()
           if (active && voiceRecording === active) {
             voiceRecording = null
@@ -296,6 +317,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
       const active = voiceRecording
       voiceRecording = null
       voiceActionInFlight = true
+      out.spinner.stop()
       out.write('\n')
       void active
         .stop()
@@ -362,7 +384,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
           const sub = (args[0] ?? '').toLowerCase()
           if (!sub) {
             out.println(`TTS: ${speechEnabled ? 'on' : 'off'} (${toTtsProviderLabel(getConfiguredTtsProvider())})`)
-            out.println('Usage: /tts on | off | use <moody|piper> | voice [id|list] | ls')
+            out.println('Usage: /tts on | off | use <rhasspy|piper> | voice [id|list] | ls')
             break
           }
           if (sub === 'on') {
@@ -381,9 +403,9 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
           if (sub === 'use') {
             const target = (args[1] ?? '').toLowerCase()
             const nextProvider: TtsProvider | null =
-              target === 'piper' ? 'piper' : target === 'moody' || target === 'endpoint' ? 'endpoint' : null
+              target === 'piper' ? 'piper' : target === 'rhasspy' || target === 'endpoint' ? 'endpoint' : null
             if (!nextProvider) {
-              out.error('Usage: /tts use <moody|piper>')
+              out.error('Usage: /tts use <rhasspy|piper>')
               break
             }
             const settings = loadSettings()
@@ -453,7 +475,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
             }
             break
           }
-          out.error('Usage: /tts on | off | use <moody|piper> | voice [id|list] | ls')
+          out.error('Usage: /tts on | off | use <rhasspy|piper> | voice [id|list] | ls')
           break
         }
         case 'stt':
