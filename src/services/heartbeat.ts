@@ -17,6 +17,7 @@ import {
 } from "./memory.ts";
 import { fetchMoltbookHeartbeatMarkdown } from "../tools/moltbook.ts";
 import { speakText } from "../tools/tts.ts";
+import { probeGatewayStatus } from "./gateway.ts";
 
 interface HeartbeatTask {
   key: string;
@@ -293,38 +294,46 @@ const WEATHER_CODE: Record<number, string> = {
   95: "thunderstorm",
 };
 
-async function runWeatherTask(): Promise<HeartbeatTaskRun> {
+async function fetchOpenMeteo(): Promise<string | null> {
   const url =
     "https://api.open-meteo.com/v1/forecast?latitude=14.5995&longitude=120.9842&current=temperature_2m,apparent_temperature,weather_code&timezone=Asia%2FManila";
-  const res = await fetch(url, { headers: { "User-Agent": "cale/0.1.0" } });
-  if (!res.ok) {
-    return {
-      key: "weather",
-      title: "Weather & Context",
-      ok: false,
-      summary: `Weather request failed (${res.status})`,
+  try {
+    const res = await fetch(url, {
+      headers: { "User-Agent": "cale/0.1.0" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return null;
+    const payload = (await res.json()) as {
+      current?: { temperature_2m?: number; apparent_temperature?: number; weather_code?: number };
     };
+    const c = payload.current;
+    if (!c) return null;
+    const weatherText = WEATHER_CODE[c.weather_code ?? -1] ?? "unknown";
+    return `Manila weather: ${c.temperature_2m ?? "?"}°C (feels ${c.apparent_temperature ?? "?"}°C), ${weatherText}.`;
+  } catch {
+    return null;
   }
-  const payload = (await res.json()) as {
-    current?: {
-      temperature_2m?: number;
-      apparent_temperature?: number;
-      weather_code?: number;
-    };
-  };
-  const current = payload.current;
-  if (!current) {
-    return {
-      key: "weather",
-      title: "Weather & Context",
-      ok: false,
-      summary: "Weather payload missing current data",
-    };
+}
+
+async function fetchWttrIn(): Promise<string | null> {
+  try {
+    const res = await fetch("https://wttr.in/Manila?format=3", {
+      headers: { "User-Agent": "cale/0.1.0" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return null;
+    const text = (await res.text()).trim();
+    return text || null;
+  } catch {
+    return null;
   }
-  const weatherText = WEATHER_CODE[current.weather_code ?? -1] ?? "unknown";
-  const summary = `Manila weather: ${current.temperature_2m ?? "?"}°C (feels ${
-    current.apparent_temperature ?? "?"
-  }°C), ${weatherText}.`;
+}
+
+async function runWeatherTask(): Promise<HeartbeatTaskRun> {
+  const summary = (await fetchOpenMeteo()) ?? (await fetchWttrIn());
+  if (!summary) {
+    return { key: "weather", title: "Weather & Context", ok: false, summary: "All weather sources failed." };
+  }
   await appendDailyMemory(`## Heartbeat Weather\n- ${summary}`);
   return {
     key: "weather",
@@ -332,9 +341,9 @@ async function runWeatherTask(): Promise<HeartbeatTaskRun> {
     ok: true,
     summary,
     urgent:
-      weatherText.includes("thunderstorm") ||
-      weatherText.includes("heavy rain") ||
-      weatherText.includes("violent"),
+      summary.includes("thunderstorm") ||
+      summary.includes("heavy rain") ||
+      summary.includes("violent"),
   };
 }
 
@@ -374,14 +383,17 @@ async function runMemoryCompactionTask(): Promise<HeartbeatTaskRun> {
 }
 
 async function runSystemHealthTask(): Promise<HeartbeatTaskRun> {
-  const [openclaw, gateway] = await Promise.all([
-    runShell("openclaw status"),
-    runShell("gateway config.get"),
-  ]);
-  const ok = openclaw.exitCode === 0 && gateway.exitCode === 0;
+  // Check gateway via internal probe (not a shell CLI)
+  const gatewayStatus = await probeGatewayStatus();
+  // Check bun runtime is accessible
+  const bunCheck = await runShell("bun --version");
+  const ok = bunCheck.exitCode === 0;
+  const gatewayNote = gatewayStatus.running
+    ? `gateway up (${gatewayStatus.url ?? "local"})`
+    : "gateway not running";
   const summary = ok
-    ? "System health checks are nominal."
-    : `System health drift detected (openclaw=${openclaw.exitCode}, gateway=${gateway.exitCode}).`;
+    ? `System nominal. Bun ${bunCheck.stdout.trim()}. ${gatewayNote}.`
+    : `System health issue: bun=${bunCheck.exitCode}. ${gatewayNote}.`;
   await appendDailyMemory(`## Heartbeat System\n- ${summary}`);
   return {
     key: "system_health",

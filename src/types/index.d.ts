@@ -25,3 +25,9 @@ declare module 'node-record-lpcm16' {
   const recorder: RecorderStatic
   export default recorder
 }
+
+declare module '@babel/traverse' {
+  export type TraverseVisitor = Record<string, (path: any) => void>
+
+  export default function traverse(ast: any, visitors: TraverseVisitor): void
+}

@@ -12,6 +12,7 @@ import { setApprovalCallback, speakText } from '../tools/index.ts'
 import { getConfiguredTtsProvider, listTtsProviders } from '../tools/tts.ts'
 import {
   handleConfig,
+  handleCrawl,
   handleHeartbeat,
   handleHelp,
   handlePromptAdd,
@@ -365,6 +366,9 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
           break
         case 'config':
           handleConfig()
+          break
+        case 'crawl':
+          await handleCrawl(args.slice(1))
           break
         case 'onboard':
           await runOnboard(replRl)
