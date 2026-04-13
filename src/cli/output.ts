@@ -29,8 +29,7 @@ export const out = {
 
   clearLine: () => process.stdout.write("\r\x1b[K"),
 
-  elapsed: (ms: number) =>
-    process.stdout.write(pc.dim(` (${(ms / 1000).toFixed(1)}s)\n`)),
+  elapsed: (ms: number) => pc.dim(` (${(ms / 1000).toFixed(1)}s)`),
 
   spinner: {
     _id: null as ReturnType<typeof setInterval> | null,

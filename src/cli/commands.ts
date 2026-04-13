@@ -34,6 +34,8 @@ import {
   uninstallHeartbeatLaunchd
 } from '../services/launchd.ts'
 import { requestApproval } from '../tools/approval.ts'
+import { generateQRCode } from '../tools/qrcode.ts'
+import { generateUUIDv7 } from '../tools/uuid.ts'
 import { tools } from '../tools/index.ts'
 import { out } from './output.ts'
 import type { createReadline } from './readline.ts'
@@ -45,6 +47,8 @@ export function handleHelp(): void {
   ${pc.bold('Commands')}
   ${c('/help')}     ${d('Show this help')}
   ${c('/config')}   ${d('Show provider and model')}
+  ${c('/qr')}       ${d('Generate a QR code for a link')} ${d('(/qr <link> | /qrcode <link>)')}
+  ${c('/uuid')}     ${d('Generate UUIDv7 values')} ${d('(/uuid [count] | /uuidv7 [count])')}
   ${c('/crawl')}    ${d('Dead code analysis')} ${d('([<dir>] | <symbol> [--root path] [--git-url url])')}
   ${c('/model')}    ${d('Switch model')} ${d('(/model gpt-4o)')}
   ${c('/prompt')}   ${d('Manage system prompts')} ${d('(list, use, add, set, show, remove)')}
@@ -59,6 +63,36 @@ export function handleHelp(): void {
 
   ${pc.bold('Tools')} ${d(Object.keys(tools).join(', '))}
 `)
+}
+
+export async function handleQRCode(args: string[]): Promise<void> {
+  const link = args[0]
+  if (!link) {
+    out.error('Usage: /qr <link>')
+    return
+  }
+
+  try {
+    const result = await generateQRCode(link)
+    out.write(`\n${result.qrCode}\n`)
+    out.println(result.link)
+  } catch (error) {
+    out.error(error instanceof Error ? error.message : String(error))
+  }
+}
+
+export function handleUUID(args: string[]): void {
+  const rawCount = args[0]
+  const count = rawCount ? Number.parseInt(rawCount, 10) : 1
+  if (!Number.isInteger(count) || count < 1 || count > 100) {
+    out.error('Usage: /uuid [count]')
+    return
+  }
+
+  const uuids = generateUUIDv7(count)
+  for (const id of uuids) {
+    out.println(id)
+  }
 }
 
 export function handleConfig(): void {

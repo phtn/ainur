@@ -21,11 +21,13 @@ import {
   handlePromptSet,
   handlePromptShow,
   handlePromptUse,
+  handleQRCode,
   handleSessionCurrent,
   handleSessionList,
   handleSessionNew,
   handleSessionRemove,
-  handleSessionUse
+  handleSessionUse,
+  handleUUID
 } from './commands.ts'
 import { completer } from './completer.ts'
 import { runOnboard } from './onboard.ts'
@@ -241,7 +243,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
             }
           })
           voiceRecording = active
-          out.println(`✦`)
+
           await waitForVoiceCaptureWindow()
           if (voiceRecording !== active) return
           out.spinner.stop()
@@ -260,7 +262,6 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
             )
             return
           }
-          out.println('···')
 
           const transcript = await transcribeAudioFile({
             filePath: active.filePath
@@ -274,9 +275,8 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
             return
           }
           out.spinner.stop()
-          out.println('✓')
           replRl.resume()
-          replRl.write(text)
+          replRl.write('✦ ' + text)
           replRl.write('\n')
         } catch (error) {
           out.spinner.stop()
@@ -366,6 +366,14 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
           break
         case 'config':
           handleConfig()
+          break
+        case 'qr':
+        case 'qrcode':
+          await handleQRCode(args)
+          break
+        case 'uuid':
+        case 'uuidv7':
+          handleUUID(args)
           break
         case 'crawl':
           await handleCrawl(args.slice(1))
@@ -589,8 +597,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
 
       messages = newMessages
       saveSession(currentSession, messages)
-      out.write('\n')
-      out.elapsed(performance.now() - t0)
+      out.write(out.elapsed(performance.now() - t0))
       out.write('\n')
 
       if (speechEnabled && responseText.trim()) {

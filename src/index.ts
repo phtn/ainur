@@ -465,8 +465,8 @@ export async function main(): Promise<void> {
     });
     if (firstChunk) out.spinner.stop();
     if (!streamedText && text) process.stdout.write(text);
-    if (!text.endsWith("\n")) process.stdout.write("\n");
-    out.elapsed(performance.now() - t0);
+    process.stdout.write(out.elapsed(performance.now() - t0));
+    process.stdout.write("\n");
     rl?.close();
     return;
   }

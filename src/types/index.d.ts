@@ -31,3 +31,24 @@ declare module '@babel/traverse' {
 
   export default function traverse(ast: any, visitors: TraverseVisitor): void
 }
+
+declare module 'qrcode' {
+  export interface QRCodeToStringOptions {
+    type?: 'utf8' | 'terminal' | 'svg' | 'txt' | 'png'
+    errorCorrectionLevel?: 'L' | 'M' | 'Q' | 'H'
+  }
+
+  export interface QRCodeToDataURLOptions {
+    errorCorrectionLevel?: 'L' | 'M' | 'Q' | 'H'
+  }
+
+  export function toString(text: string, options?: QRCodeToStringOptions): Promise<string>
+  export function toDataURL(text: string, options?: QRCodeToDataURLOptions): Promise<string>
+
+  const QRCode: {
+    toString: typeof toString
+    toDataURL: typeof toDataURL
+  }
+
+  export default QRCode
+}

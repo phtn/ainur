@@ -3,7 +3,9 @@ import { crawlCodebaseTool } from './crawler.ts'
 import { runCommandTool } from './exec.ts'
 import { listDirTool, readFileTool, searchFilesTool, writeFileTool } from './filesystem.ts'
 import { memoryAppendTool, memoryCompactTool, memoryReadTool, memorySearchTool } from './memory.ts'
+import { qrCodeTool } from './qrcode.ts'
 import { moltbookTool } from './moltbook.ts'
+import { uuidV7Tool } from './uuid.ts'
 import { toolSmithTool } from './toolsmith.ts'
 import { speakTool } from './tts.ts'
 import { fetchUrlTool } from './web.ts'
@@ -16,6 +18,8 @@ export const tools: ToolSet = {
   crawl_codebase: crawlCodebaseTool,
   run_command: runCommandTool,
   fetch_url: fetchUrlTool,
+  qr_code: qrCodeTool,
+  uuid_v7: uuidV7Tool,
   speak: speakTool,
   memory_read: memoryReadTool,
   memory_append: memoryAppendTool,
@@ -30,7 +34,9 @@ export { crawlCodebaseTool } from './crawler.ts'
 export { runCommandTool } from './exec.ts'
 export { listDirTool, readFileTool, searchFilesTool, writeFileTool } from './filesystem.ts'
 export { memoryAppendTool, memoryCompactTool, memoryReadTool, memorySearchTool } from './memory.ts'
+export { qrCodeTool } from './qrcode.ts'
 export { loadMoltbookCredentials, moltbookTool } from './moltbook.ts'
+export { uuidV7Tool } from './uuid.ts'
 export { toolSmithTool } from './toolsmith.ts'
 export { speakText, speakTool } from './tts.ts'
 export { fetchUrlTool } from './web.ts'
