@@ -51,6 +51,7 @@ import {
   getTtsVoiceIdFromEndpoint,
   withTtsVoice,
 } from "./cli/tts-voice.ts";
+import { handleCrypto } from "./cli/commands.ts";
 
 function question(rl: ReturnType<typeof createReadline>, q: string): Promise<string> {
   return new Promise((resolve) => rl.question(q, resolve));
@@ -484,6 +485,12 @@ export async function main(): Promise<void> {
       console.error("cale:", error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
+    return;
+  }
+
+  if (args.includes("crypto")) {
+    const cryptoArgs = args.slice(args.indexOf("crypto") + 1);
+    await handleCrypto(cryptoArgs);
     return;
   }
 

@@ -34,6 +34,7 @@ import {
   uninstallHeartbeatLaunchd
 } from '../services/launchd.ts'
 import { requestApproval } from '../tools/approval.ts'
+import { fetchCryptoSnapshot, renderCryptoSnapshot } from '../tools/crypto.ts'
 import { generateQRCode } from '../tools/qrcode.ts'
 import { generateUUIDv7 } from '../tools/uuid.ts'
 import { tools } from '../tools/index.ts'
@@ -47,6 +48,7 @@ export function handleHelp(): void {
   ${pc.bold('Commands')}
   ${c('/help')}     ${d('Show this help')}
   ${c('/config')}   ${d('Show provider and model')}
+  ${c('/crypto')}   ${d('Show crypto market data')} ${d('(/crypto | /crypto BTC)')}
   ${c('/qr')}       ${d('Generate a QR code for a link')} ${d('(/qr <link> | /qrcode <link>)')}
   ${c('/uuid')}     ${d('Generate UUIDv7 values')} ${d('(/uuid [count] | /uuidv7 [count])')}
   ${c('/crawl')}    ${d('Dead code analysis')} ${d('([<dir>] | <symbol> [--root path] [--git-url url])')}
@@ -76,6 +78,17 @@ export async function handleQRCode(args: string[]): Promise<void> {
     const result = await generateQRCode(link)
     out.write(`\n${result.qrCode}\n`)
     out.println(result.link)
+  } catch (error) {
+    out.error(error instanceof Error ? error.message : String(error))
+  }
+}
+
+export async function handleCrypto(args: string[]): Promise<void> {
+  const ticker = args[0]
+
+  try {
+    const snapshot = await fetchCryptoSnapshot(ticker)
+    out.write(renderCryptoSnapshot(snapshot))
   } catch (error) {
     out.error(error instanceof Error ? error.message : String(error))
   }

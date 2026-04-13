@@ -13,6 +13,7 @@ import { getConfiguredTtsProvider, listTtsProviders } from '../tools/tts.ts'
 import {
   handleConfig,
   handleCrawl,
+  handleCrypto,
   handleHeartbeat,
   handleHelp,
   handlePromptAdd,
@@ -367,6 +368,9 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
         case 'config':
           handleConfig()
           break
+        case 'crypto':
+          await handleCrypto(args)
+          break
         case 'qr':
         case 'qrcode':
           await handleQRCode(args)
@@ -598,7 +602,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
       messages = newMessages
       saveSession(currentSession, messages)
       out.write(out.elapsed(performance.now() - t0))
-      out.write('\n')
+      out.write('\n\n')
 
       if (speechEnabled && responseText.trim()) {
         const provider = getConfiguredTtsProvider()

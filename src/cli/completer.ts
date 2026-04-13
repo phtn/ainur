@@ -4,6 +4,7 @@ import { listSessions } from '../config/sessions.ts'
 const COMMANDS = [
   '/help',
   '/config',
+  '/crypto',
   '/qr',
   '/qrcode',
   '/uuid',
