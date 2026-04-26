@@ -2,37 +2,68 @@ import { tool } from "ai";
 import QRCode from "qrcode";
 import { z } from "zod";
 
-function normalizeLink(link: string): string {
-  const value = link.trim();
-  if (!value) return value;
+export type QRCodePayloadKind = "url" | "crypto-address" | "text";
+
+export interface QRCodePayload {
+  kind: QRCodePayloadKind;
+  payload: string;
+}
+
+const EVM_HEX_ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
+
+export function normalizeQRCodePayload(input: string): QRCodePayload {
+  const value = input.trim();
+  if (!value) return { kind: "text", payload: value };
+
+  if (EVM_HEX_ADDRESS_PATTERN.test(value)) {
+    return { kind: "crypto-address", payload: value };
+  }
 
   try {
     new URL(value);
-    return value;
+    return { kind: "url", payload: value };
   } catch {
-    if (/^[a-z][a-z0-9+.-]*:/i.test(value)) return value;
-    return `https://${value}`;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(value)) {
+      return { kind: "url", payload: value };
+    }
+
+    if (/^[^\s]+\.[^\s]+$/.test(value)) {
+      return { kind: "url", payload: `https://${value}` };
+    }
+
+    return { kind: "text", payload: value };
   }
 }
 
-export async function generateQRCode(link: string): Promise<{ link: string; qrCode: string }> {
-  const normalizedLink = normalizeLink(link);
-  const qrCode = await QRCode.toString(normalizedLink, {
+export interface QRCodeResult {
+  input: string;
+  kind: QRCodePayloadKind;
+  payload: string;
+  link: string;
+  qrCode: string;
+}
+
+export async function generateQRCode(input: string): Promise<QRCodeResult> {
+  const normalized = normalizeQRCodePayload(input);
+  const qrCode = await QRCode.toString(normalized.payload, {
     type: "utf8",
     errorCorrectionLevel: "M",
   });
 
   return {
-    link: normalizedLink,
+    input,
+    kind: normalized.kind,
+    payload: normalized.payload,
+    link: normalized.payload,
     qrCode,
   };
 }
 
 export const qrCodeTool = tool({
   description:
-    "Generate a QR code for a link or URL so the user can scan it. Use when the user wants a link turned into a QR code.",
+    "Generate a QR code for a URL, crypto wallet address, or text so the user can scan it.",
   inputSchema: z.object({
-    link: z.string().min(1).describe("The link or URL to encode into a QR code"),
+    link: z.string().min(1).describe("The URL, crypto wallet address, or text to encode into a QR code"),
   }),
   execute: async ({ link }) => {
     return generateQRCode(link);

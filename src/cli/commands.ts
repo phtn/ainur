@@ -49,7 +49,7 @@ export function handleHelp(): void {
   ${c('/help')}     ${d('Show this help')}
   ${c('/config')}   ${d('Show provider and model')}
   ${c('/crypto')}   ${d('Show crypto market data')} ${d('(/crypto | /crypto BTC)')}
-  ${c('/qr')}       ${d('Generate a QR code for a link')} ${d('(/qr <link> | /qrcode <link>)')}
+  ${c('/qr')}       ${d('Generate a QR code')} ${d('(/qr <url|address|text> | /qrcode <...>)')}
   ${c('/uuid')}     ${d('Generate UUIDv7 values')} ${d('(/uuid [count] | /uuidv7 [count])')}
   ${c('/crawl')}    ${d('Dead code analysis')} ${d('([<dir>] | <symbol> [--root path] [--git-url url])')}
   ${c('/model')}    ${d('Switch model')} ${d('(/model gpt-4o)')}
@@ -68,16 +68,16 @@ export function handleHelp(): void {
 }
 
 export async function handleQRCode(args: string[]): Promise<void> {
-  const link = args[0]
-  if (!link) {
-    out.error('Usage: /qr <link>')
+  const input = args.join(' ')
+  if (!input) {
+    out.error('Usage: /qr <url|address|text>')
     return
   }
 
   try {
-    const result = await generateQRCode(link)
+    const result = await generateQRCode(input)
     out.write(`\n${result.qrCode}\n`)
-    out.println(result.link)
+    out.println(result.payload)
   } catch (error) {
     out.error(error instanceof Error ? error.message : String(error))
   }
