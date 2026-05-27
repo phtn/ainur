@@ -75,10 +75,11 @@ export interface CaleSettings {
 // Rhasspy defaults: STT + TTS on localhost:5002
 const RHASSPY_STT = 'http://localhost:12101/api/listen-for-command'
 const RHASSPY_TTS = 'http://localhost:5002/api/text-to-speech?speakerId=hot-moody'
+const COMMAND_A_PLUS = 'command-a-plus-05-2026'
 
 const DEFAULT_SETTINGS: CaleSettings = {
   provider: 'cohere',
-  model: 'command-a-03-2025',
+  model: COMMAND_A_PLUS,
   ttsProvider: 'endpoint',
   ttsEndpoint: RHASSPY_TTS,
   sttProvider: 'endpoint',
@@ -220,3 +221,4 @@ export function getApiKeyForProvider(provider: Provider): string | undefined {
   const raw = env[provider] ?? (provider !== 'ollama' && s.provider === provider ? s.apiKey : undefined)
   return typeof raw === 'string' ? raw.trim() : undefined
 }
+export { COMMAND_A_PLUS }
