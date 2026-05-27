@@ -589,7 +589,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
         onChunk: (chunk: string) => {
           if (firstChunk) {
             out.spinner.stop()
-            out.write('\n')
+            out.write('\n ')
             firstChunk = false
           }
 
@@ -610,7 +610,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
 
             // Write the gesture italic + dimmed on its own line
             const gesture = buffer.slice(openIdx, closeIdx + 1)
-            out.write(`${ITALIC_DIM}${gesture}${RESET}\n`)
+            out.write(`${ITALIC_DIM}${gesture.replaceAll('*', ' ')}${RESET}\n`)
 
             searchFrom = closeIdx + 1
           }
