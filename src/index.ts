@@ -1,5 +1,6 @@
 import pc from "picocolors";
 import { startRepl } from "./cli/repl.ts";
+import { startTuiRepl } from "./cli/tui-repl.ts";
 import { runOnboard, isConfigured } from "./cli/onboard.ts";
 import { runAgent } from "./agent/loop.ts";
 import { resolveModel } from "./agent/config.ts";
@@ -90,6 +91,7 @@ export async function main(): Promise<void> {
   const promptArg = promptIdx >= 0 ? args[promptIdx + 1] : undefined;
   const dirIdx = args.indexOf("--dir");
   const workspace = dirIdx >= 0 ? args[dirIdx + 1] : undefined;
+  const useTui = args.includes("--tui");
 
   if (workspace) {
     process.env.CALE_WORKSPACE = workspace;
@@ -183,7 +185,7 @@ export async function main(): Promise<void> {
         s.sttProvider = normalized;
       } else if (key === "soulAlignment") {
         const parsed = val.toLowerCase();
-        if (!["true", "false", "1", "0", "yes", "no"].includes(parsed)) {
+        if (!["true", "false", "1", "0", "yes", "no"].includes(parsed) ) {
           console.error("soulAlignment must be true/false");
           process.exit(1);
         }
@@ -682,6 +684,7 @@ export async function main(): Promise<void> {
 
   ${pc.bold("Usage")}
   ${c("cale")}                    ${d("Start interactive REPL")}
+  ${c("cale --tui")}             ${d("Start TUI mode (full-screen terminal UI)")}
   ${c("cale onboard")}            ${d("Run setup wizard")}
   ${c("cale -p")} ${d('"prompt"')}        ${d("One-shot prompt")}
   ${c("cale config")} ${d("get|set|list")} ${d("Manage config")}
@@ -719,7 +722,12 @@ export async function main(): Promise<void> {
   }
 
   ensureGatewayAutoStart();
-  await startRepl();
+
+  if (useTui) {
+    await startTuiRepl();
+  } else {
+    await startRepl();
+  }
 }
 
 if (import.meta.main) {

@@ -18,6 +18,7 @@
     "@ai-sdk/openai": "3",
     "@babel/parser": "^7.29.2",
     "@babel/traverse": "^7.29.0",
+    "@jitl/opentui-core": "^0.2.15-next.e19b300",
     "ai": "6",
     "dotenv": "^17.3.1",
     "geist": "^1.7.0",

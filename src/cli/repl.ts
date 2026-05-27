@@ -48,7 +48,8 @@ function visibleWidth(text: string): number {
   const withoutAnsi = text.replace(/\x1b\[[0-9;]*m/g, '')
   return [...withoutAnsi].length
 }
-
+const ITALIC_DIM = '\x1b[2;3m' // dim + italic
+const RESET = '\x1b[0m'
 const FALLBACK_TTS_SPINNER = {
   frames: ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'],
   interval: 80
@@ -68,7 +69,7 @@ function toTtsProviderLabel(provider: TtsProvider): string {
 }
 
 function makePrompt(): string {
-  return `${pc.green('➜')} `
+  return `${pc.cyan('➜')} `
 }
 
 function printBanner(session: string): void {
@@ -570,6 +571,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
     }
 
     messages.push({ role: 'user', content: trimmed })
+    const gestureRegex = /\*([^*]+)\*/g
 
     try {
       const model = resolveModel(modelOverride)
@@ -577,28 +579,63 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
       isGenerating = true
       const t0 = performance.now()
       let firstChunk = true
-
-      out.spinner.start('thinking')
+      let buffer = ''
+      out.spinner.start('')
 
       const { text: responseText, messages: newMessages } = await runAgent({
         model,
         messages,
         abortSignal: abortController.signal,
-        onChunk: (chunk) => {
+        onChunk: (chunk: string) => {
           if (firstChunk) {
             out.spinner.stop()
             out.write('\n')
             firstChunk = false
           }
-          out.write(chunk)
+
+          buffer += chunk
+
+          // Process all complete *gesture* blocks and plain text between them
+          let searchFrom = 0
+          while (true) {
+            const openIdx = buffer.indexOf('*', searchFrom)
+            if (openIdx === -1) break
+
+            const closeIdx = buffer.indexOf('*', openIdx + 1)
+            if (closeIdx === -1) break // gesture not yet complete — keep buffering
+
+            // Flush any plain text before the gesture
+            const before = buffer.slice(searchFrom, openIdx)
+            if (before) out.write(before)
+
+            // Write the gesture italic + dimmed on its own line
+            const gesture = buffer.slice(openIdx, closeIdx + 1)
+            out.write(`${ITALIC_DIM}${gesture}${RESET}\n`)
+
+            searchFrom = closeIdx + 1
+          }
+
+          // Keep only the unprocessed tail (may contain an incomplete gesture)
+          buffer = buffer.slice(searchFrom)
+
+          // Flush plain text that can't possibly be part of a gesture yet
+          // (i.e. no opening * is lurking in the buffer)
+          const pendingOpen = buffer.indexOf('*')
+          if (pendingOpen === -1) {
+            // No gesture opening in sight — safe to flush everything
+            out.write(buffer)
+            buffer = ''
+          }
+          // Otherwise hold the buffer until the closing * arrives
         }
       })
 
+      // Flush any remaining buffer (e.g. plain text at end of response)
+      if (buffer) out.write(buffer)
+
       isGenerating = false
       abortController = null
-
       if (firstChunk) out.spinner.stop()
-
       messages = newMessages
       saveSession(currentSession, messages)
       out.write(out.elapsed(performance.now() - t0))
@@ -615,10 +652,6 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
       }
     } catch (err) {
       isGenerating = false
-      abortController = null
-      out.spinner.stop()
-      if (err instanceof Error && err.name === 'AbortError') continue
-      out.error(err instanceof Error ? err.message : String(err))
     }
   }
 }
