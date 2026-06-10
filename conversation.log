@@ -1,0 +1,12 @@
+User: I need to compress conversation to memory
+Assistant: Understood, I'll run compression
+User: This is a long conversation with many tokens
+Assistant: Let me check the token count
+User: We want to stay under 128K tokens
+Assistant: The system will compress when reaching 110K threshold
+User: This simulates a real conversation that would grow over time
+Assistant: Compression will archive old logs and keep summary in MEMORY.md
+User: Make sure it works automatically
+Assistant: Added monitoring and automatic compression triggers
+User: Test compression now
+Assistant: Running compression...

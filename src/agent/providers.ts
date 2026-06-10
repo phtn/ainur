@@ -28,7 +28,7 @@ export function createModel(provider: Provider, modelId: string, apiKey?: string
     }
     case 'cohere': {
       const cohereProvider = createCohere({
-        apiKey: key ?? process.env.COHERE_API_KEY ?? process.env.CO_API_KEY
+        apiKey: key ?? process.env.COHERE_API_KEY ?? ''
       })
       return cohereProvider(modelId as typeof COMMAND_A_PLUS)
     }

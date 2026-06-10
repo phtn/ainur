@@ -70,6 +70,10 @@ export interface CaleSettings {
   gatewayBind?: string
   gatewayToken?: string
   massive?: string
+  // New reasoning configuration
+  reasoningEnabled?: boolean
+  reasoningSeparator?: string
+  reasoningColor?: string
 }
 
 // Rhasspy defaults: STT + TTS on localhost:5002
@@ -89,7 +93,11 @@ const DEFAULT_SETTINGS: CaleSettings = {
   gatewayEnabled: true,
   gatewayAutoStart: true,
   gatewayPort: 18889,
-  gatewayBind: '127.0.0.1'
+  gatewayBind: '127.0.0.1',
+  // Reasoning defaults
+  reasoningEnabled: true,
+  reasoningSeparator: '\n\n',
+  reasoningColor: 'gray'
 }
 
 export function getConfigDir(): string {
@@ -133,10 +141,8 @@ export function loadSettings(): CaleSettings {
       soulAlignment: typeof parsed.soulAlignment === 'boolean' ? parsed.soulAlignment : DEFAULT_SETTINGS.soulAlignment,
       soulTemperature:
         typeof parsed.soulTemperature === 'number' ? parsed.soulTemperature : DEFAULT_SETTINGS.soulTemperature,
-      gatewayEnabled:
-        typeof parsed.gatewayEnabled === 'boolean' ? parsed.gatewayEnabled : DEFAULT_SETTINGS.gatewayEnabled,
-      gatewayAutoStart:
-        typeof parsed.gatewayAutoStart === 'boolean' ? parsed.gatewayAutoStart : DEFAULT_SETTINGS.gatewayAutoStart,
+      gatewayEnabled: typeof parsed.gatewayEnabled === 'boolean' ? parsed.gatewayEnabled : DEFAULT_SETTINGS.gatewayEnabled,
+      gatewayAutoStart: typeof parsed.gatewayAutoStart === 'boolean' ? parsed.gatewayAutoStart : DEFAULT_SETTINGS.gatewayAutoStart,
       gatewayPort:
         typeof parsed.gatewayPort === 'number' &&
         Number.isInteger(parsed.gatewayPort) &&
@@ -149,7 +155,11 @@ export function loadSettings(): CaleSettings {
         typeof parsed.gatewayToken === 'string' && parsed.gatewayToken.trim().length > 0
           ? parsed.gatewayToken.trim()
           : undefined,
-      massive: process.env.MASSIVE_API_KEY
+      massive: process.env.MASSIVE_API_KEY,
+      // Load reasoning settings with defaults
+      reasoningEnabled: typeof parsed.reasoningEnabled === 'boolean' ? parsed.reasoningEnabled : DEFAULT_SETTINGS.reasoningEnabled,
+      reasoningSeparator: typeof parsed.reasoningSeparator === 'string' ? parsed.reasoningSeparator : DEFAULT_SETTINGS.reasoningSeparator,
+      reasoningColor: typeof parsed.reasoningColor === 'string' ? parsed.reasoningColor : DEFAULT_SETTINGS.reasoningColor
     }
   } catch {
     _settings = { ...DEFAULT_SETTINGS }
@@ -181,6 +191,10 @@ export function getSettingsWithEnv(): CaleSettings {
   const gatewayPortEnv = normalizeGatewayPort(process.env.CALE_GATEWAY_PORT)
   const gatewayBindEnv = normalizeGatewayBind(process.env.CALE_GATEWAY_BIND)
   const gatewayTokenEnv = process.env.CALE_GATEWAY_TOKEN?.trim()
+  const reasoningEnabledEnv = normalizeBoolean(process.env.CALE_REASONING_ENABLED)
+  const reasoningSeparatorEnv = process.env.CALE_REASONING_SEPARATOR?.trim()
+  const reasoningColorEnv = process.env.CALE_REASONING_COLOR?.trim()
+
   return {
     provider: (process.env.CALE_PROVIDER as Provider | undefined) ?? settings.provider,
     model: process.env.CALE_MODEL ?? settings.model,
@@ -189,6 +203,7 @@ export function getSettingsWithEnv(): CaleSettings {
       process.env.ANTHROPIC_API_KEY ??
       process.env.OPENROUTER_API_KEY ??
       process.env.COHERE_API_KEY ??
+      process.env.CO_API_KEY ??
       settings.apiKey,
     ttsModel: process.env.CALE_TTS_MODEL ?? settings.ttsModel,
     ttsEndpoint: process.env.CALE_TTS_ENDPOINT ?? settings.ttsEndpoint,
@@ -205,7 +220,10 @@ export function getSettingsWithEnv(): CaleSettings {
     gatewayPort: gatewayPortEnv ?? settings.gatewayPort,
     gatewayBind: gatewayBindEnv ?? settings.gatewayBind,
     gatewayToken: gatewayTokenEnv && gatewayTokenEnv.length > 0 ? gatewayTokenEnv : settings.gatewayToken,
-    massive: process.env.MASSIVE_API_KEY
+    massive: process.env.MASSIVE_API_KEY,
+    reasoningEnabled: reasoningEnabledEnv !== undefined ? reasoningEnabledEnv : settings.reasoningEnabled,
+    reasoningSeparator: reasoningSeparatorEnv && reasoningSeparatorEnv.length > 0 ? reasoningSeparatorEnv : settings.reasoningSeparator,
+    reasoningColor: reasoningColorEnv && reasoningColorEnv.length > 0 ? reasoningColorEnv : settings.reasoningColor
   }
 }
 
