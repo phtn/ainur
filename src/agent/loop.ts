@@ -12,6 +12,7 @@ export interface RunAgentOptions {
   onApprove?: ToolApprovalCallback;
   onChunk?: (text: string) => void;
   abortSignal?: AbortSignal;
+  systemPrompt?: string;
 }
 
 export interface RunAgentResult {
@@ -31,6 +32,7 @@ async function executeStream(options: {
   onChunk?: (text: string) => void;
   abortSignal?: AbortSignal;
   includeTools: boolean;
+  systemPrompt?: string;
 }): Promise<RunAgentResult> {
   const previousCount = options.messages.length;
   const settings = getSettingsWithEnv();
@@ -38,7 +40,7 @@ async function executeStream(options: {
     settings.soulAlignment === false ? undefined : settings.soulTemperature;
   const result = streamText({
     model: options.model,
-    system: getActiveSystemPrompt(),
+    system: options.systemPrompt ?? getActiveSystemPrompt(),
     messages: options.messages,
     tools: options.includeTools ? tools : undefined,
     stopWhen: stepCountIs(10),
@@ -59,7 +61,7 @@ async function executeStream(options: {
 }
 
 export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult> {
-  const { model, messages, onApprove, onChunk, abortSignal } = options;
+  const { model, messages, onApprove, onChunk, abortSignal, systemPrompt } = options;
 
   if (onApprove !== undefined) {
     setApprovalCallback(onApprove);
@@ -72,6 +74,7 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
       onChunk,
       abortSignal,
       includeTools: true,
+      systemPrompt,
     });
   } catch (error) {
     if (!isToolsUnsupportedError(error)) {
@@ -83,17 +86,19 @@ export async function runAgent(options: RunAgentOptions): Promise<RunAgentResult
       onChunk,
       abortSignal,
       includeTools: false,
+      systemPrompt,
     });
   }
 }
 
 export async function runAgentTextOnly(options: Omit<RunAgentOptions, "onApprove">): Promise<RunAgentResult> {
-  const { model, messages, onChunk, abortSignal } = options;
+  const { model, messages, onChunk, abortSignal, systemPrompt } = options;
   return executeStream({
     model,
     messages,
     onChunk,
     abortSignal,
     includeTools: false,
+    systemPrompt,
   });
 }

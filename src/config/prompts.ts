@@ -68,6 +68,10 @@ export function getActiveSystemPrompt(): string {
   return rolePrompt ? `${rolePrompt}\n\n${base}` : base
 }
 
+export function getTextOnlySystemPrompt(): string {
+  return `${getActiveSystemPrompt()}\n\nThis endpoint does not have access to tools. Do not call tools or mention tool availability. Respond directly in plain text.`
+}
+
 export function getPrimaryRolePrompt(): string {
   const data = loadPromptsRaw()
   const roleFiles = data.roleFiles && data.roleFiles.length > 0 ? data.roleFiles : getDefaultRoleFiles()

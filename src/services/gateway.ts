@@ -2,13 +2,8 @@ import type { ModelMessage } from "ai";
 import { resolveModel } from "../agent/config.ts";
 import { runAgentTextOnly } from "../agent/loop.ts";
 import { getSettingsWithEnv } from "../config/settings.ts";
-
-type OpenAiChatRole = "system" | "user" | "assistant" | "developer";
-
-interface OpenAiChatMessage {
-  role: OpenAiChatRole;
-  content: unknown;
-}
+import { getTextOnlySystemPrompt } from "../config/prompts.ts";
+import { convertOpenAiChatMessagesToModelMessages } from "./openai-chat-messages.ts";
 
 interface OpenAiChatCompletionsRequest {
   model?: string;
@@ -59,54 +54,6 @@ function normalizeGatewayHost(rawHost?: string): string {
   if (!trimmed || trimmed === "loopback") return "127.0.0.1";
   if (trimmed === "lan") return "0.0.0.0";
   return trimmed;
-}
-
-function extractTextContent(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    const parts: string[] = [];
-    for (const item of content) {
-      if (!item || typeof item !== "object") continue;
-      const part = item as { type?: unknown; text?: unknown };
-      if (
-        (part.type === "text" || part.type === "input_text") &&
-        typeof part.text === "string"
-      ) {
-        parts.push(part.text);
-      }
-    }
-    return parts.join("\n").trim();
-  }
-  if (content && typeof content === "object") {
-    const value = content as { text?: unknown };
-    if (typeof value.text === "string") return value.text;
-  }
-  return "";
-}
-
-function toModelMessages(rawMessages: unknown): ModelMessage[] {
-  if (!Array.isArray(rawMessages)) {
-    throw new Error("messages must be an array");
-  }
-
-  const messages: ModelMessage[] = [];
-  for (const rawMessage of rawMessages) {
-    if (!rawMessage || typeof rawMessage !== "object") {
-      throw new Error("each message must be an object");
-    }
-    const message = rawMessage as Partial<OpenAiChatMessage>;
-    const role = message.role;
-    if (role !== "system" && role !== "user" && role !== "assistant" && role !== "developer") {
-      throw new Error(`unsupported message role: ${String(role)}`);
-    }
-
-    const normalizedRole = role === "developer" ? "system" : role;
-    messages.push({
-      role: normalizedRole,
-      content: extractTextContent(message.content),
-    });
-  }
-  return messages;
 }
 
 function resolveGatewayModel(rawModel?: string) {
@@ -169,7 +116,7 @@ async function handleChatCompletions(request: Request): Promise<Response> {
 
   let messages: ModelMessage[];
   try {
-    messages = toModelMessages(body.messages);
+    messages = convertOpenAiChatMessagesToModelMessages(body.messages);
   } catch (error) {
     return jsonResponse(
       {
@@ -186,6 +133,7 @@ async function handleChatCompletions(request: Request): Promise<Response> {
   const result = await runAgentTextOnly({
     model,
     messages,
+    systemPrompt: getTextOnlySystemPrompt(),
   });
   const completionText = result.text ?? "";
 
