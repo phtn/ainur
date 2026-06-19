@@ -26,7 +26,7 @@ const SESSION_SUBCOMMANDS = ['list', 'use', 'new', 'remove', 'current']
 const HEARTBEAT_SUBCOMMANDS = ['status', 'start', 'stop', 'once', 'launchd']
 const HEARTBEAT_LAUNCHD_SUBCOMMANDS = ['status', 'install', 'uninstall', 'print']
 const TTS_SUBCOMMANDS = ['on', 'off', 'use', 'voice', 'ls']
-const TTS_PROVIDERS = ['moody', 'piper']
+const TTS_PROVIDERS = ['rhasspy', 'endpoint', 'piper']
 
 /**
  * Tab completion for REPL commands.
