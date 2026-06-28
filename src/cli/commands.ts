@@ -56,7 +56,7 @@ export function handleHelp(): void {
   ${c('/prompt')}   ${d('Manage system prompts')} ${d('(list, use, add, set, show, remove)')}
   ${c('/session')}  ${d('Manage conversations')} ${d('(list, use, new, remove, current)')}
   ${c('/heartbeat')} ${d('Heartbeat service')} ${d('(status, start, stop, once, launchd)')}
-  ${c('/tts')}      ${d('Text-to-speech controls')} ${d('(on, off, use, voice, ls)')}
+  ${c('/tts')}      ${d('Text-to-speech controls')} ${d('(on, off, use, melo, voice, language, speed, ls)')}
   ${c('/stt')}      ${d('Transcribe audio file')} ${d('(/stt [audio-file])')}
   ${c('\\')}         ${d('Record voice (5s capture + auto-send)')}
   ${c('/onboard')}  ${d('Re-run setup wizard')}
@@ -112,8 +112,13 @@ export function handleConfig(): void {
   const s = loadSettings()
   out.println(`provider: ${s.provider}`)
   out.println(`model: ${s.model}`)
+  out.println(`ttsProvider: ${s.ttsProvider ?? 'endpoint'}`)
   if (s.ttsModel) out.println(`ttsModel: ${s.ttsModel}`)
   if (s.ttsEndpoint) out.println(`ttsEndpoint: ${s.ttsEndpoint}`)
+  if (s.meloTtsEndpoint) out.println(`meloTtsEndpoint: ${s.meloTtsEndpoint}`)
+  if (s.meloTtsVoiceId) out.println(`meloTtsVoiceId: ${s.meloTtsVoiceId}`)
+  if (s.meloTtsLanguage) out.println(`meloTtsLanguage: ${s.meloTtsLanguage}`)
+  if (typeof s.meloTtsSpeed === 'number') out.println(`meloTtsSpeed: ${s.meloTtsSpeed}`)
   out.println(`sttProvider: ${s.sttProvider ?? 'endpoint'}`)
   if (s.sttEndpoint) out.println(`sttEndpoint: ${s.sttEndpoint}`)
   out.println(`soulAlignment: ${s.soulAlignment !== false ? 'true' : 'false'}`)

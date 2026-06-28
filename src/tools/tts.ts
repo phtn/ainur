@@ -7,6 +7,13 @@ import { tool } from "ai";
 import { z } from "zod";
 import { requestApproval } from "./approval.ts";
 import { getConfigDir, loadSettings, type TtsProvider } from "../config/settings.ts";
+import {
+  getMeloTtsEndpoint,
+  getMeloTtsLanguage,
+  getMeloTtsSpeed,
+  getMeloTtsVoiceId,
+  runMeloTts,
+} from "../services/melo-tts.ts";
 
 const DEFAULT_TTS_MODEL_FILENAME = "en_US-libritts_r-medium.onnx";
 const DEFAULT_TTS_ENDPOINT =
@@ -15,7 +22,7 @@ const DEFAULT_TTS_PROVIDER: TtsProvider = "endpoint";
 
 function normalizeTtsProvider(value: string | undefined): TtsProvider | undefined {
   const normalized = value?.trim().toLowerCase();
-  if (normalized === "endpoint" || normalized === "piper") return normalized;
+  if (normalized === "endpoint" || normalized === "piper" || normalized === "melo") return normalized;
   return undefined;
 }
 
@@ -88,6 +95,8 @@ export interface TtsProviderStatus {
 export function listTtsProviders(): TtsProviderStatus[] {
   const endpoint = getTtsEndpoint();
   const modelPath = getPiperModel();
+  const meloEndpoint = getMeloTtsEndpoint();
+  const meloVoiceId = getMeloTtsVoiceId();
   return [
     {
       id: "endpoint",
@@ -102,6 +111,13 @@ export function listTtsProviders(): TtsProviderStatus[] {
           ? modelPath
           : `${modelPath} (missing)`
         : "No Piper model configured",
+    },
+    {
+      id: "melo",
+      configured: Boolean(meloEndpoint && meloVoiceId),
+      detail: meloVoiceId
+        ? `${meloEndpoint} voice=${meloVoiceId} language=${getMeloTtsLanguage()} speed=${getMeloTtsSpeed()}`
+        : `${meloEndpoint} (no voice configured)`,
     },
   ];
 }
@@ -290,7 +306,7 @@ async function runEndpointTts(
 
 export const speakTool = tool({
   description:
-    "Convert text to speech and play it aloud. Uses CALE_TTS_ENDPOINT when configured (posts raw text body) and falls back to local Piper when localhost:5002 is unavailable. Requires user approval before playing.",
+    "Convert text to speech and play it aloud. Supports HTTP endpoint, local Piper, and MeloTTS providers. Requires user approval before playing.",
   inputSchema: z.object({
     text: z.string().describe("The text to speak aloud"),
   }),
@@ -342,6 +358,14 @@ export const speakTool = tool({
               message: `TTS endpoint unavailable (${endpoint}). Piper failed. Is 'piper' in PATH? (pip install piper-tts). ${stderr.slice(0, 200)}`,
             };
           }
+        }
+      } else if (provider === "melo") {
+        const meloResult = await runMeloTts(cleanText, wavPath);
+        if (!meloResult.ok) {
+          return {
+            played: false,
+            message: `MeloTTS failed. ${meloResult.stderr.slice(0, 240)}`,
+          };
         }
       } else {
         if (!modelPath || !existsSync(modelPath)) {
@@ -425,6 +449,13 @@ export async function speakText(text: string, options: SpeakTextOptions = {}): P
         const { ok } = await runPiper(trimmed, wavPath, modelPath);
         if (!ok) return false;
       }
+    } else if (provider === "melo") {
+      waitingForEndpoint = true;
+      options.onServiceWaitChange?.(true);
+      const meloResult = await runMeloTts(trimmed, wavPath);
+      waitingForEndpoint = false;
+      options.onServiceWaitChange?.(false);
+      if (!meloResult.ok) return false;
     } else {
       if (!modelPath || !existsSync(modelPath)) return false;
       const { ok } = await runPiper(trimmed, wavPath, modelPath);

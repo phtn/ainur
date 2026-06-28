@@ -7,6 +7,7 @@ import { resolveModel } from "./agent/config.ts";
 import { setApprovalCallback } from "./tools/index.ts";
 import { out } from "./cli/output.ts";
 import {
+  getSettingsWithEnv,
   loadSettings,
   saveSettings,
   type Provider,
@@ -52,6 +53,16 @@ import {
   getTtsVoiceIdFromEndpoint,
   withTtsVoice,
 } from "./cli/tts-voice.ts";
+import {
+  fetchMeloTtsLanguages,
+  fetchMeloTtsVoices,
+  getMeloTtsEndpoint,
+  getMeloTtsLanguage,
+  getMeloTtsSpeed,
+  getMeloTtsVoiceId,
+  getMeloTtsVoiceSelector,
+  resolveMeloTtsVoiceId,
+} from "./services/melo-tts.ts";
 import { handleCrypto } from "./cli/commands.ts";
 
 function question(rl: ReturnType<typeof createReadline>, q: string): Promise<string> {
@@ -104,38 +115,28 @@ export async function main(): Promise<void> {
       const key = configArgs[1];
       const s = loadSettings();
       if (key) {
-        const v =
-          key === "provider"
-            ? s.provider
-            : key === "model"
-              ? s.model
-              : key === "apiKey"
-                ? s.apiKey
-                : key === "ttsModel"
-                  ? s.ttsModel
-                : key === "ttsEndpoint"
-                    ? s.ttsEndpoint
-                    : key === "ttsProvider"
-                      ? s.ttsProvider
-                    : key === "sttEndpoint"
-                      ? s.sttEndpoint
-                    : key === "sttProvider"
-                      ? s.sttProvider
-                  : key === "soulAlignment"
-                    ? s.soulAlignment
-                    : key === "soulTemperature"
-                      ? s.soulTemperature
-                      : key === "gatewayEnabled"
-                        ? s.gatewayEnabled
-                        : key === "gatewayAutoStart"
-                          ? s.gatewayAutoStart
-                          : key === "gatewayPort"
-                            ? s.gatewayPort
-                            : key === "gatewayBind"
-                              ? s.gatewayBind
-                              : key === "gatewayToken"
-                                ? s.gatewayToken
-                      : undefined;
+        const values: Record<string, unknown> = {
+          provider: s.provider,
+          model: s.model,
+          apiKey: s.apiKey,
+          ttsModel: s.ttsModel,
+          ttsEndpoint: s.ttsEndpoint,
+          ttsProvider: s.ttsProvider,
+          meloTtsEndpoint: s.meloTtsEndpoint,
+          meloTtsVoiceId: s.meloTtsVoiceId,
+          meloTtsLanguage: s.meloTtsLanguage,
+          meloTtsSpeed: s.meloTtsSpeed,
+          sttEndpoint: s.sttEndpoint,
+          sttProvider: s.sttProvider,
+          soulAlignment: s.soulAlignment,
+          soulTemperature: s.soulTemperature,
+          gatewayEnabled: s.gatewayEnabled,
+          gatewayAutoStart: s.gatewayAutoStart,
+          gatewayPort: s.gatewayPort,
+          gatewayBind: s.gatewayBind,
+          gatewayToken: s.gatewayToken,
+        };
+        const v = values[key];
         console.log(v ?? "");
       } else {
         console.log(JSON.stringify(s, null, 2));
@@ -169,11 +170,24 @@ export async function main(): Promise<void> {
         s.ttsEndpoint = val;
       } else if (key === "ttsProvider") {
         const normalized = val.trim().toLowerCase();
-        if (normalized !== "endpoint" && normalized !== "piper") {
-          console.error("ttsProvider must be one of: endpoint, piper");
+        if (normalized !== "endpoint" && normalized !== "piper" && normalized !== "melo") {
+          console.error("ttsProvider must be one of: endpoint, piper, melo");
           process.exit(1);
         }
         s.ttsProvider = normalized;
+      } else if (key === "meloTtsEndpoint") {
+        s.meloTtsEndpoint = val.trim().replace(/\/+$/, "");
+      } else if (key === "meloTtsVoiceId") {
+        s.meloTtsVoiceId = val.trim() || undefined;
+      } else if (key === "meloTtsLanguage") {
+        s.meloTtsLanguage = val.trim() || undefined;
+      } else if (key === "meloTtsSpeed") {
+        const parsed = Number.parseFloat(val);
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          console.error("meloTtsSpeed must be a positive number");
+          process.exit(1);
+        }
+        s.meloTtsSpeed = parsed;
       } else if (key === "sttEndpoint") {
         s.sttEndpoint = val;
       } else if (key === "sttProvider") {
@@ -506,6 +520,19 @@ export async function main(): Promise<void> {
       return;
     }
 
+    if (sub === "use") {
+      const provider = ttsArgs[1]?.trim().toLowerCase();
+      if (provider !== "endpoint" && provider !== "rhasspy" && provider !== "piper" && provider !== "melo") {
+        console.error("Usage: cale tts use <rhasspy|endpoint|piper|melo>");
+        process.exit(1);
+      }
+      const s = loadSettings();
+      s.ttsProvider = provider === "rhasspy" ? "endpoint" : provider;
+      saveSettings(s);
+      console.log(`Set ttsProvider = ${s.ttsProvider}`);
+      return;
+    }
+
     if (sub === "endpoint") {
       const endpoint = ttsArgs[1];
       if (!endpoint) {
@@ -519,9 +546,102 @@ export async function main(): Promise<void> {
       return;
     }
 
+    if (sub === "melo") {
+      const endpoint = ttsArgs[1];
+      if (!endpoint) {
+        console.log(getMeloTtsEndpoint());
+        return;
+      }
+      const s = loadSettings();
+      s.meloTtsEndpoint = endpoint.trim().replace(/\/+$/, "");
+      saveSettings(s);
+      console.log(`Set meloTtsEndpoint = ${s.meloTtsEndpoint}`);
+      return;
+    }
+
+    if (sub === "language") {
+      const languageArg = ttsArgs[1];
+      const shouldList = !languageArg || languageArg === "list" || languageArg === "ls";
+      if (shouldList) {
+        const result = await fetchMeloTtsLanguages();
+        if (!result.items.length) {
+          console.error(`No MeloTTS languages found. ${result.error ?? ""}`.trim());
+          process.exit(1);
+        }
+        console.log(`endpoint: ${getMeloTtsEndpoint()}`);
+        console.log(`currentLanguage: ${getMeloTtsLanguage()}`);
+        result.items.forEach((language) => {
+          const marker = language.code === getMeloTtsLanguage() ? "*" : " ";
+          const speaker = language.speaker ? ` (${language.speaker})` : "";
+          console.log(` ${marker} ${language.code}${speaker}`);
+        });
+        return;
+      }
+
+      const s = loadSettings();
+      s.meloTtsLanguage = languageArg.trim();
+      saveSettings(s);
+      console.log(`Set meloTtsLanguage = ${s.meloTtsLanguage}`);
+      return;
+    }
+
+    if (sub === "speed") {
+      const speedArg = ttsArgs[1];
+      if (!speedArg) {
+        console.log(getMeloTtsSpeed());
+        return;
+      }
+      const parsed = Number.parseFloat(speedArg);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        console.error("Usage: cale tts speed <positive-number>");
+        process.exit(1);
+      }
+      const s = loadSettings();
+      s.meloTtsSpeed = parsed;
+      saveSettings(s);
+      console.log(`Set meloTtsSpeed = ${parsed}`);
+      return;
+    }
+
     if (sub === "voice") {
       const voiceIdArg = ttsArgs[1];
       const shouldList = !voiceIdArg || voiceIdArg === "list" || voiceIdArg === "ls";
+      const activeProvider = getSettingsWithEnv().ttsProvider;
+
+      if (activeProvider === "melo") {
+        if (shouldList) {
+          const result = await fetchMeloTtsVoices();
+          if (!result.items.length) {
+            console.error(`No MeloTTS voices found. ${result.error ?? ""}`.trim());
+            process.exit(1);
+          }
+          const currentVoice = getMeloTtsVoiceId();
+          console.log(`endpoint: ${getMeloTtsEndpoint()}`);
+          if (currentVoice) console.log(`currentVoice: ${currentVoice}`);
+          result.items.forEach((voice) => {
+            const marker = voice.id === currentVoice ? "*" : " ";
+            const selector = getMeloTtsVoiceSelector(voice.id);
+            const label = voice.name && voice.name !== voice.id ? ` (${voice.name})` : "";
+            const suffix = selector === voice.id ? label : ` -> ${voice.id}${label}`;
+            console.log(` ${marker} ${selector}${suffix}`);
+          });
+          return;
+        }
+
+        const resolution = await resolveMeloTtsVoiceId(voiceIdArg);
+        if (!resolution.ok || !resolution.voiceId) {
+          console.error(resolution.error ?? "Unable to resolve MeloTTS voice.");
+          process.exit(1);
+        }
+        const s = loadSettings();
+        s.meloTtsVoiceId = resolution.voiceId;
+        saveSettings(s);
+        console.log(`Set meloTtsVoiceId = ${s.meloTtsVoiceId}`);
+        if (resolution.selector && resolution.selector !== resolution.voiceId) {
+          console.log(`Voice selector: ${resolution.selector}`);
+        }
+        return;
+      }
 
       if (shouldList) {
         const endpoint = getConfiguredTtsEndpoint();
@@ -557,7 +677,7 @@ export async function main(): Promise<void> {
       return;
     }
 
-    console.error("Usage: cale tts install | endpoint <url> | voice [voice-id|list]");
+    console.error("Usage: cale tts install | use <rhasspy|piper|melo> | endpoint <url> | melo <url> | voice [voice-id|list] | language [code|list] | speed <number>");
     process.exit(1);
     return;
   }
@@ -695,8 +815,12 @@ export async function main(): Promise<void> {
   ${c("cale gateway")} ${d("start|status")} ${d("API gateway control")}
   ${c("cale heartbeat launchd")} ${d("status|install|...")} ${d("Install heartbeat as launchd agent")}
   ${c("cale tts install")}        ${d("Install Piper TTS")}
+  ${c("cale tts use")} ${d("<rhasspy|piper|melo>")} ${d("Select TTS provider")}
   ${c("cale tts endpoint")} ${d("<url>")} ${d("Use HTTP TTS endpoint")}
-  ${c("cale tts voice")} ${d("[voice-id|list]")} ${d("List/set endpoint voice from API options")}
+  ${c("cale tts melo")} ${d("<url>")}     ${d("Set MeloTTS service URL")}
+  ${c("cale tts voice")} ${d("[voice-id|list]")} ${d("List/set active provider voice")}
+  ${c("cale tts language")} ${d("[code|list]")} ${d("List/set MeloTTS language")}
+  ${c("cale tts speed")} ${d("[number]")} ${d("Get/set MeloTTS speed")}
   ${c("cale stt")} ${d("[audio-file]")}    ${d("Speech-to-text via local Whisper (file or interactive recording)")}
   ${c("REPL hotkey: \\")}          ${d("Record voice for 5s at empty prompt, then auto-send")}
   ${c("cale --dir")} ${d("<path>")}       ${d("Set workspace directory")}
@@ -705,6 +829,7 @@ export async function main(): Promise<void> {
   ${d("OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY,")}
   ${d("COHERE_API_KEY (or CO_API_KEY), CALE_WORKSPACE, CALE_EXTRA_WORKSPACES,")}
   ${d("CALE_TTS_MODEL, CALE_TTS_ENDPOINT, CALE_TTS_PROVIDER, CALE_STT_ENDPOINT, CALE_STT_PROVIDER,")}
+  ${d("CALE_MELO_TTS_ENDPOINT, CALE_MELO_TTS_VOICE_ID, CALE_MELO_TTS_LANGUAGE, CALE_MELO_TTS_SPEED,")}
   ${d("CALE_SOUL_ALIGNMENT, CALE_SOUL_TEMPERATURE,")}
   ${d("CALE_GATEWAY_ENABLED, CALE_GATEWAY_AUTO_START, CALE_GATEWAY_PORT, CALE_GATEWAY_BIND, CALE_GATEWAY_TOKEN")}
 

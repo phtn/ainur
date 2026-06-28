@@ -3,16 +3,25 @@ import { homedir, platform } from 'node:os'
 import { join } from 'node:path'
 
 export type Provider = 'openai' | 'anthropic' | 'openrouter' | 'cohere' | 'ollama'
-export type TtsProvider = 'endpoint' | 'piper'
+export type TtsProvider = 'endpoint' | 'piper' | 'melo'
 export type SttProvider = 'openai' | 'endpoint'
 
 function normalizeTtsProvider(value: unknown): TtsProvider | undefined {
   if (typeof value !== 'string') return undefined
   const normalized = value.trim().toLowerCase()
-  if (normalized === 'endpoint' || normalized === 'piper') {
+  if (normalized === 'endpoint' || normalized === 'piper' || normalized === 'melo') {
     return normalized
   }
   return undefined
+}
+
+function normalizePositiveNumber(value: unknown): number | undefined {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) && value > 0 ? value : undefined
+  }
+  if (typeof value !== 'string') return undefined
+  const parsed = Number.parseFloat(value.trim())
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined
 }
 
 function normalizeSttProvider(value: unknown): SttProvider | undefined {
@@ -60,6 +69,10 @@ export interface CaleSettings {
   ttsModel?: string
   ttsEndpoint?: string
   ttsProvider?: TtsProvider
+  meloTtsEndpoint?: string
+  meloTtsVoiceId?: string
+  meloTtsLanguage?: string
+  meloTtsSpeed?: number
   sttProvider?: SttProvider
   sttEndpoint?: string
   soulAlignment?: boolean
@@ -79,6 +92,8 @@ export interface CaleSettings {
 // Rhasspy defaults: STT + TTS on localhost:5002
 const RHASSPY_STT = 'http://localhost:12101/api/listen-for-command'
 const RHASSPY_TTS = 'http://localhost:5002/api/text-to-speech?speakerId=hot-moody'
+const MELO_TTS_ENDPOINT = 'http://localhost:8000'
+const MELO_TTS_LANGUAGE = 'EN_NEWEST'
 const COMMAND_A_PLUS = 'command-a-plus-05-2026'
 
 const DEFAULT_SETTINGS: CaleSettings = {
@@ -86,6 +101,9 @@ const DEFAULT_SETTINGS: CaleSettings = {
   model: COMMAND_A_PLUS,
   ttsProvider: 'endpoint',
   ttsEndpoint: RHASSPY_TTS,
+  meloTtsEndpoint: MELO_TTS_ENDPOINT,
+  meloTtsLanguage: MELO_TTS_LANGUAGE,
+  meloTtsSpeed: 1,
   sttProvider: 'endpoint',
   sttEndpoint: RHASSPY_STT,
   soulAlignment: true,
@@ -136,6 +154,19 @@ export function loadSettings(): CaleSettings {
       ttsModel: parsed.ttsModel,
       ttsEndpoint: parsed.ttsEndpoint ?? DEFAULT_SETTINGS.ttsEndpoint,
       ttsProvider: normalizeTtsProvider(parsed.ttsProvider) ?? DEFAULT_SETTINGS.ttsProvider,
+      meloTtsEndpoint:
+        typeof parsed.meloTtsEndpoint === 'string' && parsed.meloTtsEndpoint.trim().length > 0
+          ? parsed.meloTtsEndpoint.trim()
+          : DEFAULT_SETTINGS.meloTtsEndpoint,
+      meloTtsVoiceId:
+        typeof parsed.meloTtsVoiceId === 'string' && parsed.meloTtsVoiceId.trim().length > 0
+          ? parsed.meloTtsVoiceId.trim()
+          : undefined,
+      meloTtsLanguage:
+        typeof parsed.meloTtsLanguage === 'string' && parsed.meloTtsLanguage.trim().length > 0
+          ? parsed.meloTtsLanguage.trim()
+          : DEFAULT_SETTINGS.meloTtsLanguage,
+      meloTtsSpeed: normalizePositiveNumber(parsed.meloTtsSpeed) ?? DEFAULT_SETTINGS.meloTtsSpeed,
       sttProvider: normalizeSttProvider(parsed.sttProvider) ?? DEFAULT_SETTINGS.sttProvider,
       sttEndpoint: parsed.sttEndpoint ?? DEFAULT_SETTINGS.sttEndpoint,
       soulAlignment: typeof parsed.soulAlignment === 'boolean' ? parsed.soulAlignment : DEFAULT_SETTINGS.soulAlignment,
@@ -194,6 +225,10 @@ export function getSettingsWithEnv(): CaleSettings {
   const reasoningEnabledEnv = normalizeBoolean(process.env.CALE_REASONING_ENABLED)
   const reasoningSeparatorEnv = process.env.CALE_REASONING_SEPARATOR?.trim()
   const reasoningColorEnv = process.env.CALE_REASONING_COLOR?.trim()
+  const meloTtsEndpointEnv = process.env.CALE_MELO_TTS_ENDPOINT?.trim() || process.env.MELO_TTS_ENDPOINT?.trim()
+  const meloTtsVoiceIdEnv = process.env.CALE_MELO_TTS_VOICE_ID?.trim() || process.env.MELO_TTS_VOICE_ID?.trim()
+  const meloTtsLanguageEnv = process.env.CALE_MELO_TTS_LANGUAGE?.trim() || process.env.MELO_TTS_LANGUAGE?.trim()
+  const meloTtsSpeedEnv = normalizePositiveNumber(process.env.CALE_MELO_TTS_SPEED ?? process.env.MELO_TTS_SPEED)
 
   return {
     provider: (process.env.CALE_PROVIDER as Provider | undefined) ?? settings.provider,
@@ -208,6 +243,11 @@ export function getSettingsWithEnv(): CaleSettings {
     ttsModel: process.env.CALE_TTS_MODEL ?? settings.ttsModel,
     ttsEndpoint: process.env.CALE_TTS_ENDPOINT ?? settings.ttsEndpoint,
     ttsProvider: normalizeTtsProvider(process.env.CALE_TTS_PROVIDER) ?? settings.ttsProvider,
+    meloTtsEndpoint: meloTtsEndpointEnv && meloTtsEndpointEnv.length > 0 ? meloTtsEndpointEnv : settings.meloTtsEndpoint,
+    meloTtsVoiceId: meloTtsVoiceIdEnv && meloTtsVoiceIdEnv.length > 0 ? meloTtsVoiceIdEnv : settings.meloTtsVoiceId,
+    meloTtsLanguage:
+      meloTtsLanguageEnv && meloTtsLanguageEnv.length > 0 ? meloTtsLanguageEnv : settings.meloTtsLanguage,
+    meloTtsSpeed: meloTtsSpeedEnv ?? settings.meloTtsSpeed,
     sttProvider: normalizeSttProvider(process.env.CALE_STT_PROVIDER) ?? settings.sttProvider,
     sttEndpoint: process.env.CALE_STT_ENDPOINT ?? settings.sttEndpoint,
     soulAlignment,

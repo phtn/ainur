@@ -70,6 +70,21 @@ Piper local TTS setup:
 cale tts install
 ```
 
+OpenVoice MeloTTS service setup:
+
+```bash
+# Start the service from MELO_TTS.md, upload a reference voice, then:
+cale tts use melo
+cale tts melo http://localhost:8000
+cale tts voice list
+cale tts voice theron
+cale tts language list
+cale tts language EN_NEWEST
+cale tts speed 1.0
+```
+
+MeloTTS expects the service API described in `MELO_TTS.md`: `POST /synthesize` returns an audio URL under `audio.audio_url`, and `GET /voices` / `GET /languages` provide discovery. For voices, `cale tts voice list` shows the short selector before `->`; selecting `theron` stores the full id like `theron-edf501e0cc`.
+
 **Local Whisper STT** (used by `cale stt` and REPL voice): requires `whisper-cli` on your PATH and a Whisper model file. On macOS you may need the native library (see below).
 
 - **Model:** Set `CALE_WHISPER_MODEL` to the path of a `.bin` model (e.g. from [whisper.cpp](https://github.com/ggml-org/whisper.cpp#sample-audio-files)). If unset, `whisper-cli` uses its default (`models/ggml-base.en.bin` relative to its cwd).
@@ -88,6 +103,10 @@ Additional speech config keys:
 
 - `sttProvider` (`endpoint` | `openai`)
 - `sttEndpoint` (URL)
-- `ttsProvider` (`endpoint|piper`)
+- `ttsProvider` (`endpoint` | `piper` | `melo`)
 - `ttsEndpoint` (URL)
 - `ttsModel` (local `.onnx` path for Piper)
+- `meloTtsEndpoint` (OpenVoice MeloTTS service URL, default `http://localhost:8000`)
+- `meloTtsVoiceId` (uploaded reference voice ID)
+- `meloTtsLanguage` (default `EN_NEWEST`)
+- `meloTtsSpeed` (default `1`)

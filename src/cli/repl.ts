@@ -11,6 +11,16 @@ import { getSettingsWithEnv, loadSettings, saveSettings, type Provider, type Tts
 import { setApprovalCallback, speakText } from '../tools/index.ts'
 import { getConfiguredTtsProvider, listTtsProviders } from '../tools/tts.ts'
 import {
+  fetchMeloTtsLanguages,
+  fetchMeloTtsVoices,
+  getMeloTtsEndpoint,
+  getMeloTtsLanguage,
+  getMeloTtsSpeed,
+  getMeloTtsVoiceId,
+  getMeloTtsVoiceSelector,
+  resolveMeloTtsVoiceId
+} from '../services/melo-tts.ts'
+import {
   handleConfig,
   handleCrawl,
   handleCrypto,
@@ -58,6 +68,8 @@ const TTS_STATUS_SPINNER = animations.cascade ?? FALLBACK_TTS_SPINNER
 const VOICE_HOTKEY = '\\'
 const VOICE_CAPTURE_DURATION_MS = 5000
 const VOICE_CAPTURE_DURATION_SECONDS = VOICE_CAPTURE_DURATION_MS / 1000
+const TTS_USAGE =
+  'Usage: /tts on | off | use <rhasspy|piper|melo> | melo [url] | voice [id|list] | language [code|list] | speed [number] | ls'
 
 interface PromptRightIndicator {
   plain: string
@@ -65,7 +77,7 @@ interface PromptRightIndicator {
 }
 
 function toTtsProviderLabel(provider: TtsProvider): string {
-  return provider === 'endpoint' ? 'rhasspy' : 'piper'
+  return provider === 'endpoint' ? 'rhasspy' : provider
 }
 
 function makePrompt(): string {
@@ -401,7 +413,7 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
           const sub = (args[0] ?? '').toLowerCase()
           if (!sub) {
             out.println(`TTS: ${speechEnabled ? 'on' : 'off'} (${toTtsProviderLabel(getConfiguredTtsProvider())})`)
-            out.println('Usage: /tts on | off | use <rhasspy|piper> | voice [id|list] | ls')
+            out.println(TTS_USAGE)
             break
           }
           if (sub === 'on') {
@@ -420,9 +432,15 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
           if (sub === 'use') {
             const target = (args[1] ?? '').toLowerCase()
             const nextProvider: TtsProvider | null =
-              target === 'piper' ? 'piper' : target === 'rhasspy' || target === 'endpoint' ? 'endpoint' : null
+              target === 'melo'
+                ? 'melo'
+                : target === 'piper'
+                  ? 'piper'
+                  : target === 'rhasspy' || target === 'endpoint'
+                    ? 'endpoint'
+                    : null
             if (!nextProvider) {
-              out.error('Usage: /tts use <rhasspy|piper>')
+              out.error('Usage: /tts use <rhasspy|piper|melo>')
               break
             }
             const settings = loadSettings()
@@ -436,6 +454,21 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
             const activeProvider = getConfiguredTtsProvider()
             if (activeProvider !== nextProvider) {
               out.warnLine(`Active provider remains ${toTtsProviderLabel(activeProvider)} due to env override.`)
+            }
+            break
+          }
+          if (sub === 'melo') {
+            const endpoint = (args[1] ?? '').trim()
+            if (!endpoint) {
+              out.println(`meloTtsEndpoint: ${getMeloTtsEndpoint()}`)
+              break
+            }
+            const settings = loadSettings()
+            settings.meloTtsEndpoint = endpoint.replace(/\/+$/, '')
+            saveSettings(settings)
+            out.successLine(`MeloTTS endpoint set to ${settings.meloTtsEndpoint}`)
+            if (process.env.CALE_MELO_TTS_ENDPOINT || process.env.MELO_TTS_ENDPOINT) {
+              out.warnLine('MeloTTS endpoint env var is set and overrides config for this session.')
             }
             break
           }
@@ -454,6 +487,47 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
           if (sub === 'voice') {
             const targetVoice = (args[1] ?? '').trim()
             const shouldList = !targetVoice || targetVoice === 'list' || targetVoice === 'ls'
+            const activeProvider = getConfiguredTtsProvider()
+
+            if (activeProvider === 'melo') {
+              if (shouldList) {
+                const result = await fetchMeloTtsVoices()
+                if (!result.items.length) {
+                  out.error(`No MeloTTS voices found. ${result.error ?? ''}`.trim())
+                  break
+                }
+                const currentVoice = getMeloTtsVoiceId()
+                out.println(`MeloTTS endpoint: ${getMeloTtsEndpoint()}`)
+                if (currentVoice) out.println(`Current voice: ${currentVoice}`)
+                out.println('Voices:')
+                for (const voice of result.items) {
+                  const marker = voice.id === currentVoice ? '*' : ' '
+                  const selector = getMeloTtsVoiceSelector(voice.id)
+                  const label = voice.name && voice.name !== voice.id ? ` (${voice.name})` : ''
+                  const suffix = selector === voice.id ? label : ` -> ${voice.id}${label}`
+                  out.println(` ${marker} ${selector}${suffix}`)
+                }
+                break
+              }
+
+              const resolution = await resolveMeloTtsVoiceId(targetVoice)
+              if (!resolution.ok || !resolution.voiceId) {
+                out.error(resolution.error ?? 'Unable to resolve MeloTTS voice.')
+                break
+              }
+              const settings = loadSettings()
+              settings.meloTtsVoiceId = resolution.voiceId
+              saveSettings(settings)
+              out.successLine(`MeloTTS voice set to ${resolution.voiceId}`)
+              if (resolution.selector && resolution.selector !== resolution.voiceId) {
+                out.println(`Voice selector: ${resolution.selector}`)
+              }
+              if (process.env.CALE_MELO_TTS_VOICE_ID || process.env.MELO_TTS_VOICE_ID) {
+                out.warnLine('MeloTTS voice env var is set and overrides config for this session.')
+              }
+              break
+            }
+
             const endpoint = getConfiguredTtsEndpoint()
 
             if (shouldList) {
@@ -492,7 +566,51 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
             }
             break
           }
-          out.error('Usage: /tts on | off | use <rhasspy|piper> | voice [id|list] | ls')
+          if (sub === 'language') {
+            const language = (args[1] ?? '').trim()
+            const shouldList = !language || language === 'list' || language === 'ls'
+            if (shouldList) {
+              const result = await fetchMeloTtsLanguages()
+              if (!result.items.length) {
+                out.error(`No MeloTTS languages found. ${result.error ?? ''}`.trim())
+                break
+              }
+              const currentLanguage = getMeloTtsLanguage()
+              out.println(`MeloTTS endpoint: ${getMeloTtsEndpoint()}`)
+              out.println(`Current language: ${currentLanguage}`)
+              out.println('Languages:')
+              for (const item of result.items) {
+                const marker = item.code === currentLanguage ? '*' : ' '
+                const suffix = item.speaker ? ` (${item.speaker})` : ''
+                out.println(` ${marker} ${item.code}${suffix}`)
+              }
+              break
+            }
+
+            const settings = loadSettings()
+            settings.meloTtsLanguage = language
+            saveSettings(settings)
+            out.successLine(`MeloTTS language set to ${language}`)
+            break
+          }
+          if (sub === 'speed') {
+            const speedArg = (args[1] ?? '').trim()
+            if (!speedArg) {
+              out.println(`meloTtsSpeed: ${getMeloTtsSpeed()}`)
+              break
+            }
+            const speed = Number.parseFloat(speedArg)
+            if (!Number.isFinite(speed) || speed <= 0) {
+              out.error('Usage: /tts speed <positive-number>')
+              break
+            }
+            const settings = loadSettings()
+            settings.meloTtsSpeed = speed
+            saveSettings(settings)
+            out.successLine(`MeloTTS speed set to ${speed}`)
+            break
+          }
+          out.error(TTS_USAGE)
           break
         }
         case 'stt':

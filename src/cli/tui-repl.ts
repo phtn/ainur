@@ -9,6 +9,16 @@ import { getSettingsWithEnv, loadSettings, saveSettings, type Provider, type Tts
 import { setApprovalCallback, speakText } from '../tools/index.ts'
 import { getConfiguredTtsProvider, listTtsProviders } from '../tools/tts.ts'
 import {
+  fetchMeloTtsLanguages,
+  fetchMeloTtsVoices,
+  getMeloTtsEndpoint,
+  getMeloTtsLanguage,
+  getMeloTtsSpeed,
+  getMeloTtsVoiceId,
+  getMeloTtsVoiceSelector,
+  resolveMeloTtsVoiceId
+} from '../services/melo-tts.ts'
+import {
   handleConfig,
   handleCrawl,
   handleCrypto,
@@ -32,6 +42,8 @@ import { runSttCli } from './stt.ts'
 import { fetchTtsVoiceOptions, getConfiguredTtsEndpoint, getTtsVoiceIdFromEndpoint, withTtsVoice } from './tts-voice.ts'
 
 const ANSI_PATTERN = /\x1b\[[0-9;]*m/g
+const TTS_USAGE =
+  'Usage: /tts on | off | use <rhasspy|piper|melo> | melo [url] | voice [id|list] | language [code|list] | speed [number] | ls'
 
 function stripAnsi(text: string): string {
   return text.replace(ANSI_PATTERN, '')
@@ -111,7 +123,7 @@ async function captureCliOutput<T>(fn: () => T | Promise<T>): Promise<{ output: 
 }
 
 function toTtsProviderLabel(provider: TtsProvider): string {
-  return provider === 'endpoint' ? 'rhasspy' : 'piper'
+  return provider === 'endpoint' ? 'rhasspy' : provider
 }
 
 function textFromMessage(message: ModelMessage): string {
@@ -358,7 +370,7 @@ export async function startTuiRepl(): Promise<void> {
       case 'tts': {
         const sub = (args[0] ?? '').toLowerCase()
         if (!sub) {
-          addSystemEntry(`TTS: ${speechEnabled ? 'on' : 'off'} (${toTtsProviderLabel(getConfiguredTtsProvider())})\nUsage: /tts on | off | use <rhasspy|piper> | voice [id|list] | ls`)
+          addSystemEntry(`TTS: ${speechEnabled ? 'on' : 'off'} (${toTtsProviderLabel(getConfiguredTtsProvider())})\n${TTS_USAGE}`)
           break
         }
         if (sub === 'on') {
@@ -374,15 +386,33 @@ export async function startTuiRepl(): Promise<void> {
         if (sub === 'use') {
           const target = (args[1] ?? '').toLowerCase()
           const nextProvider: TtsProvider | null =
-            target === 'piper' ? 'piper' : target === 'rhasspy' || target === 'endpoint' ? 'endpoint' : null
+            target === 'melo'
+              ? 'melo'
+              : target === 'piper'
+                ? 'piper'
+                : target === 'rhasspy' || target === 'endpoint'
+                  ? 'endpoint'
+                  : null
           if (!nextProvider) {
-            addSystemEntry('Usage: /tts use <rhasspy|piper>')
+            addSystemEntry('Usage: /tts use <rhasspy|piper|melo>')
             break
           }
           const nextSettings = loadSettings()
           nextSettings.ttsProvider = nextProvider
           saveSettings(nextSettings)
           addSystemEntry(`TTS provider set to ${toTtsProviderLabel(nextProvider)}`)
+          break
+        }
+        if (sub === 'melo') {
+          const endpoint = (args[1] ?? '').trim()
+          if (!endpoint) {
+            addSystemEntry(`meloTtsEndpoint: ${getMeloTtsEndpoint()}`)
+            break
+          }
+          const nextSettings = loadSettings()
+          nextSettings.meloTtsEndpoint = endpoint.replace(/\/+$/, '')
+          saveSettings(nextSettings)
+          addSystemEntry(`MeloTTS endpoint set to ${nextSettings.meloTtsEndpoint}`)
           break
         }
         if (sub === 'ls') {
@@ -400,6 +430,47 @@ export async function startTuiRepl(): Promise<void> {
         if (sub === 'voice') {
           const targetVoice = (args[1] ?? '').trim()
           const shouldList = !targetVoice || targetVoice === 'list' || targetVoice === 'ls'
+          const activeProvider = getConfiguredTtsProvider()
+          if (activeProvider === 'melo') {
+            if (shouldList) {
+              const currentVoice = getMeloTtsVoiceId()
+              const result = await fetchMeloTtsVoices()
+              if (!result.items.length) {
+                addSystemEntry(`No MeloTTS voices found. ${result.error ?? ''}`.trim())
+                break
+              }
+              addSystemEntry(
+                [
+                  `MeloTTS endpoint: ${getMeloTtsEndpoint()}`,
+                  ...(currentVoice ? [`Current voice: ${currentVoice}`] : []),
+                  'Voices:',
+                  ...result.items.map((voice) => {
+                    const marker = voice.id === currentVoice ? '*' : ' '
+                    const selector = getMeloTtsVoiceSelector(voice.id)
+                    const label = voice.name && voice.name !== voice.id ? ` (${voice.name})` : ''
+                    const suffix = selector === voice.id ? label : ` -> ${voice.id}${label}`
+                    return ` ${marker} ${selector}${suffix}`
+                  })
+                ].join('\n')
+              )
+              break
+            }
+            const resolution = await resolveMeloTtsVoiceId(targetVoice)
+            if (!resolution.ok || !resolution.voiceId) {
+              addSystemEntry(`Error: ${resolution.error ?? 'Unable to resolve MeloTTS voice.'}`)
+              break
+            }
+            const nextSettings = loadSettings()
+            nextSettings.meloTtsVoiceId = resolution.voiceId
+            saveSettings(nextSettings)
+            addSystemEntry(
+              resolution.selector && resolution.selector !== resolution.voiceId
+                ? `MeloTTS voice set to ${resolution.voiceId}\nVoice selector: ${resolution.selector}`
+                : `MeloTTS voice set to ${resolution.voiceId}`
+            )
+            break
+          }
+
           const endpoint = getConfiguredTtsEndpoint()
           if (shouldList) {
             const currentVoice = getTtsVoiceIdFromEndpoint(endpoint)
@@ -434,7 +505,54 @@ export async function startTuiRepl(): Promise<void> {
           }
           break
         }
-        addSystemEntry('Usage: /tts on | off | use <rhasspy|piper> | voice [id|list] | ls')
+        if (sub === 'language') {
+          const language = (args[1] ?? '').trim()
+          const shouldList = !language || language === 'list' || language === 'ls'
+          if (shouldList) {
+            const currentLanguage = getMeloTtsLanguage()
+            const result = await fetchMeloTtsLanguages()
+            if (!result.items.length) {
+              addSystemEntry(`No MeloTTS languages found. ${result.error ?? ''}`.trim())
+              break
+            }
+            addSystemEntry(
+              [
+                `MeloTTS endpoint: ${getMeloTtsEndpoint()}`,
+                `Current language: ${currentLanguage}`,
+                'Languages:',
+                ...result.items.map((item) => {
+                  const marker = item.code === currentLanguage ? '*' : ' '
+                  const suffix = item.speaker ? ` (${item.speaker})` : ''
+                  return ` ${marker} ${item.code}${suffix}`
+                })
+              ].join('\n')
+            )
+            break
+          }
+          const nextSettings = loadSettings()
+          nextSettings.meloTtsLanguage = language
+          saveSettings(nextSettings)
+          addSystemEntry(`MeloTTS language set to ${language}`)
+          break
+        }
+        if (sub === 'speed') {
+          const speedArg = (args[1] ?? '').trim()
+          if (!speedArg) {
+            addSystemEntry(`meloTtsSpeed: ${getMeloTtsSpeed()}`)
+            break
+          }
+          const speed = Number.parseFloat(speedArg)
+          if (!Number.isFinite(speed) || speed <= 0) {
+            addSystemEntry('Usage: /tts speed <positive-number>')
+            break
+          }
+          const nextSettings = loadSettings()
+          nextSettings.meloTtsSpeed = speed
+          saveSettings(nextSettings)
+          addSystemEntry(`MeloTTS speed set to ${speed}`)
+          break
+        }
+        addSystemEntry(TTS_USAGE)
         break
       }
 
