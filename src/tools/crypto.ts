@@ -7,19 +7,19 @@ const CMC_BASE_URL = 'https://pro-api.coinmarketcap.com/v1/cryptocurrency'
 const usdFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 2
 })
 
 const compactUsdFormatter = new Intl.NumberFormat('en-US', {
   style: 'currency',
   currency: 'USD',
   notation: 'compact',
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 2
 })
 
 const compactNumberFormatter = new Intl.NumberFormat('en-US', {
   notation: 'compact',
-  maximumFractionDigits: 2,
+  maximumFractionDigits: 2
 })
 
 interface CoinMarketCapStatus {
@@ -98,8 +98,8 @@ async function fetchCmcJson<T>(url: string): Promise<T> {
     headers: {
       Accept: 'application/json',
       'User-Agent': 'cale/0.1.0',
-      'X-CMC_PRO_API_KEY': readApiKey(),
-    },
+      'X-CMC_PRO_API_KEY': readApiKey()
+    }
   })
 
   if (!response.ok) {
@@ -130,13 +130,13 @@ function toAsset(item: CoinMarketCapItem): CryptoAsset {
     marketCap: quote.market_cap,
     volume24h: quote.volume_24h,
     percentChange24h: quote.percent_change_24h,
-    circulatingSupply: quote.circulating_supply,
+    circulatingSupply: quote.circulating_supply
   }
 }
 
 function formatChange(value: number): string {
   const formatted = `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
-  return value > 0 ? pc.green(formatted) : value < 0 ? pc.red(formatted) : pc.dim(formatted)
+  return value > 0 ? pc.green(formatted) : pc.dim(formatted)
 }
 
 function stripAnsi(value: string): string {
@@ -163,7 +163,7 @@ function buildCryptoWidths(items: CryptoAsset[]): CryptoWidths {
       price: Math.max(widths.price, stripAnsi(pc.yellow(usdFormatter.format(asset.price))).length),
       change: Math.max(widths.change, stripAnsi(formatChange(asset.percentChange24h)).length),
       marketCap: Math.max(widths.marketCap, stripAnsi(pc.dim(compactUsdFormatter.format(asset.marketCap))).length),
-      volume: Math.max(widths.volume, stripAnsi(pc.dim(compactUsdFormatter.format(asset.volume24h))).length),
+      volume: Math.max(widths.volume, stripAnsi(pc.dim(compactUsdFormatter.format(asset.volume24h))).length)
     }),
     {
       rank: 1,
@@ -171,7 +171,7 @@ function buildCryptoWidths(items: CryptoAsset[]): CryptoWidths {
       price: 5,
       change: 3,
       marketCap: 4,
-      volume: 3,
+      volume: 3
     }
   )
 }
@@ -183,7 +183,7 @@ function formatCryptoRow(asset: CryptoAsset, widths: CryptoWidths): string {
     padLeft(pc.yellow(usdFormatter.format(asset.price)), widths.price),
     padLeft(formatChange(asset.percentChange24h), widths.change),
     padLeft(pc.dim(compactUsdFormatter.format(asset.marketCap)), widths.marketCap),
-    padLeft(pc.dim(compactUsdFormatter.format(asset.volume24h)), widths.volume),
+    padLeft(pc.dim(compactUsdFormatter.format(asset.volume24h)), widths.volume)
   ].join('  ')
 }
 
@@ -191,7 +191,7 @@ export function renderCryptoSnapshot(snapshot: CryptoSnapshot): string {
   const lines: string[] = []
 
   if (snapshot.mode === 'top') {
-    lines.push(pc.bold('Top 10 crypto by market cap'))
+    lines.push(pc.bold('T10'))
     const widths = buildCryptoWidths(snapshot.items)
     lines.push(
       [
@@ -200,9 +200,10 @@ export function renderCryptoSnapshot(snapshot: CryptoSnapshot): string {
         padLeft(pc.dim('price'), widths.price),
         padLeft(pc.dim('24h'), widths.change),
         padLeft(pc.dim('mcap'), widths.marketCap),
-        padLeft(pc.dim('vol'), widths.volume),
+        padLeft(pc.dim('vol'), widths.volume)
       ].join('  ')
     )
+    lines.push(' ')
     for (const asset of snapshot.items) {
       lines.push(formatCryptoRow(asset, widths))
     }
@@ -215,11 +216,7 @@ export function renderCryptoSnapshot(snapshot: CryptoSnapshot): string {
   lines.push(pc.bold(`${asset.symbol} quote`))
   const widths = buildCryptoWidths([asset])
   lines.push(formatCryptoRow(asset, widths))
-  lines.push(
-    pc.dim(
-      `rank #${asset.rank}  supply ${compactNumberFormatter.format(asset.circulatingSupply)}`
-    )
-  )
+  lines.push(pc.dim(`rank #${asset.rank}  supply ${compactNumberFormatter.format(asset.circulatingSupply)}`))
   return `${lines.join('\n')}\n`
 }
 
@@ -237,7 +234,7 @@ export async function fetchCryptoSnapshot(ticker?: string): Promise<CryptoSnapsh
 
     return {
       mode: 'top',
-      items: response.data.slice(0, 10).map(toAsset),
+      items: response.data.slice(0, 10).map(toAsset)
     }
   }
 
@@ -255,7 +252,7 @@ export async function fetchCryptoSnapshot(ticker?: string): Promise<CryptoSnapsh
   return {
     mode: 'quote',
     requestedTicker: symbol,
-    items: [toAsset(asset)],
+    items: [toAsset(asset)]
   }
 }
 
@@ -263,7 +260,7 @@ export const cryptoTool = tool({
   description:
     'Fetch crypto market cap data from CoinMarketCap. Use when a user asks for top crypto by market cap or a specific ticker quote.',
   inputSchema: z.object({
-    ticker: z.string().trim().optional().describe('Ticker symbol like BTC, ETH, or SOL'),
+    ticker: z.string().trim().optional().describe('Ticker symbol like BTC, ETH, or SOL')
   }),
-  execute: async ({ ticker }) => fetchCryptoSnapshot(ticker),
+  execute: async ({ ticker }) => fetchCryptoSnapshot(ticker)
 })

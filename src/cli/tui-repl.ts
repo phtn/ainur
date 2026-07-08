@@ -6,8 +6,6 @@ import { resolveProviderAndModel } from '../agent/model-selection.ts'
 import { addOrUpdatePreset } from '../config/prompts.ts'
 import { getCurrentSessionName, loadSession, saveSession, setCurrentSessionName } from '../config/sessions.ts'
 import { getSettingsWithEnv, loadSettings, saveSettings, type Provider, type TtsProvider } from '../config/settings.ts'
-import { setApprovalCallback, speakText } from '../tools/index.ts'
-import { getConfiguredTtsProvider, listTtsProviders } from '../tools/tts.ts'
 import {
   fetchMeloTtsLanguages,
   fetchMeloTtsVoices,
@@ -18,10 +16,12 @@ import {
   getMeloTtsVoiceSelector,
   resolveMeloTtsVoiceId
 } from '../services/melo-tts.ts'
+import { fetchCryptoSnapshot, renderCryptoSnapshot } from '../tools/crypto.ts'
+import { setApprovalCallback, speakText } from '../tools/index.ts'
+import { getConfiguredTtsProvider, listTtsProviders } from '../tools/tts.ts'
 import {
   handleConfig,
   handleCrawl,
-  handleCrypto,
   handleHeartbeat,
   handleHelp,
   handlePromptList,
@@ -74,7 +74,11 @@ async function captureCliOutput<T>(fn: () => T | Promise<T>): Promise<{ output: 
     return true
   }
 
-  const captureWrite = (chunk: unknown, encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void), callback?: (error?: Error | null) => void): boolean => {
+  const captureWrite = (
+    chunk: unknown,
+    encodingOrCallback?: BufferEncoding | ((error?: Error | null) => void),
+    callback?: (error?: Error | null) => void
+  ): boolean => {
     output += Buffer.isBuffer(chunk) ? chunk.toString() : String(chunk)
     if (typeof encodingOrCallback === 'function') {
       encodingOrCallback()
@@ -152,6 +156,38 @@ function summarizeText(text: string, maxLength = 180): string {
   return `${compact.slice(0, maxLength - 3).trimEnd()}...`
 }
 
+function estimateTokenCount(text: string): number {
+  return Math.ceil(text.length / 4)
+}
+
+function estimateSessionTokens(messages: ModelMessage[]): number {
+  return messages.reduce((total, message) => total + estimateTokenCount(textFromMessage(message)) + 4, 0)
+}
+
+function compactTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(tokens >= 10_000_000 ? 0 : 1)}m`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(tokens >= 10_000 ? 0 : 1)}k`
+  return String(tokens)
+}
+
+function getContextWindowTokens(provider: Provider, model: string): number | null {
+  const normalized = model.toLowerCase()
+  if (provider === 'cohere' && normalized.includes('command-a')) return 256_000
+  if (provider === 'anthropic' || normalized.includes('claude')) return 200_000
+  if (normalized.includes('gpt-4.1')) return 1_000_000
+  if (normalized.includes('o3') || normalized.includes('o4')) return 200_000
+  if (normalized.includes('gpt-4o')) return 128_000
+  if (normalized.includes('codestral')) return 32_000
+  if (normalized.includes('llama3.1')) return 128_000
+  return null
+}
+
+function formatTokenContextLabel(messages: ModelMessage[], provider: Provider, model: string): string {
+  const used = compactTokenCount(estimateSessionTokens(messages))
+  const contextWindow = getContextWindowTokens(provider, model)
+  return contextWindow ? `${used}/${compactTokenCount(contextWindow)}` : `${used}/ctx`
+}
+
 function lastMessageSummary(messages: ModelMessage[], role: 'user' | 'assistant'): string | null {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages.at(i)
@@ -178,17 +214,25 @@ export async function startTuiRepl(): Promise<void> {
 
   const settings = getSettingsWithEnv()
   const contextLabel = `${settings.provider}/${settings.model}`
+  const tokenContextLabel = formatTokenContextLabel(messages, settings.provider, settings.model)
 
-  const app = new OpenTUIApp({ contextLabel })
+  const app = new OpenTUIApp({ contextLabel, sessionLabel: currentSession, tokenContextLabel })
   await app.init()
   app.setCompleter(completer)
-  app.onCompletionSuggestions((suggestions) => {
-    app.addEntry({
-      role: 'system',
-      content: suggestions.map((suggestion) => `\`${suggestion}\``).join('\n'),
-      timestamp: new Date()
-    })
-  })
+
+  const getActiveModelSelection = (): { provider: Provider; model: string } => {
+    const activeSettings = getSettingsWithEnv()
+    return {
+      provider: modelOverride?.provider ?? activeSettings.provider,
+      model: modelOverride?.model ?? activeSettings.model
+    }
+  }
+
+  const updateHeaderLabels = (): void => {
+    const activeModel = getActiveModelSelection()
+    app.setSessionLabel(currentSession)
+    app.setTokenContextLabel(formatTokenContextLabel(messages, activeModel.provider, activeModel.model))
+  }
 
   const addSystemEntry = (content: string): void => {
     app.addEntry({ role: 'system', content, timestamp: new Date() })
@@ -247,6 +291,7 @@ export async function startTuiRepl(): Promise<void> {
     setCurrentSessionName(name)
     currentSession = name
     messages = loadSession(name)
+    updateHeaderLabels()
     app.clearEntries()
     renderSessionOverview()
   }
@@ -273,7 +318,17 @@ export async function startTuiRepl(): Promise<void> {
         break
 
       case 'crypto':
-        await runCapturedCommand(() => handleCrypto(args))
+        try {
+          const snapshot = await fetchCryptoSnapshot(args[0])
+          app.addEntry({
+            role: 'system',
+            content: stripAnsi(renderCryptoSnapshot(snapshot)).trimEnd(),
+            timestamp: new Date(),
+            renderMode: 'crypto'
+          })
+        } catch (error) {
+          addSystemEntry(`Error: ${error instanceof Error ? error.message : String(error)}`)
+        }
         break
 
       case 'qr':
@@ -290,9 +345,24 @@ export async function startTuiRepl(): Promise<void> {
         await runCapturedCommand(() => handleCrawl(args))
         break
 
+      case 'align': {
+        const target = (args[0] ?? 'toggle').toLowerCase()
+        if (target === 'left' || target === 'right') {
+          app.setUserMessageAlignment(target)
+          addSystemEntry(`User messages aligned ${target}.`)
+        } else if (target === 'toggle') {
+          const next = app.toggleUserMessageAlignment()
+          addSystemEntry(`User messages aligned ${next}.`)
+        } else {
+          addSystemEntry('Usage: /align left | right | toggle')
+        }
+        break
+      }
+
       case 'clear':
         messages = []
         saveSession(currentSession, messages)
+        updateHeaderLabels()
         app.clearEntries()
         addSystemEntry('Conversation cleared.')
         break
@@ -309,6 +379,7 @@ export async function startTuiRepl(): Promise<void> {
             timestamp: new Date()
           })
           app.setContextLabel(`${selection.provider}/${selection.model}`)
+          updateHeaderLabels()
         } else {
           addSystemEntry('Usage: /model <model-id>')
         }
@@ -370,7 +441,9 @@ export async function startTuiRepl(): Promise<void> {
       case 'tts': {
         const sub = (args[0] ?? '').toLowerCase()
         if (!sub) {
-          addSystemEntry(`TTS: ${speechEnabled ? 'on' : 'off'} (${toTtsProviderLabel(getConfiguredTtsProvider())})\n${TTS_USAGE}`)
+          addSystemEntry(
+            `TTS: ${speechEnabled ? 'on' : 'off'} (${toTtsProviderLabel(getConfiguredTtsProvider())})\n${TTS_USAGE}`
+          )
           break
         }
         if (sub === 'on') {
@@ -419,11 +492,14 @@ export async function startTuiRepl(): Promise<void> {
           const activeProvider = getConfiguredTtsProvider()
           const providers = listTtsProviders()
           addSystemEntry(
-            ['TTS providers:', ...providers.map((provider) => {
-              const marker = provider.id === activeProvider ? '*' : ' '
-              const status = provider.configured ? 'configured' : 'not configured'
-              return `  ${marker} ${toTtsProviderLabel(provider.id).padEnd(8)} ${status} ${provider.detail}`
-            })].join('\n')
+            [
+              'TTS providers:',
+              ...providers.map((provider) => {
+                const marker = provider.id === activeProvider ? '*' : ' '
+                const status = provider.configured ? 'configured' : 'not configured'
+                return `  ${marker} ${toTtsProviderLabel(provider.id).padEnd(8)} ${status} ${provider.detail}`
+              })
+            ].join('\n')
           )
           break
         }
@@ -561,7 +637,9 @@ export async function startTuiRepl(): Promise<void> {
         break
 
       case 'onboard':
-        addSystemEntry('The onboarding wizard is interactive. Run `cale onboard` or use the regular REPL for `/onboard`.')
+        addSystemEntry(
+          'The onboarding wizard is interactive. Run `cale onboard` or use the regular REPL for `/onboard`.'
+        )
         break
 
       case 'exit':
@@ -589,13 +667,14 @@ export async function startTuiRepl(): Promise<void> {
     }
 
     messages.push({ role: 'user', content: value })
+    updateHeaderLabels()
     app.addEntry({ role: 'user', content: value, timestamp: new Date() })
 
     let streamedText = ''
     let pendingAssistantRender: ReturnType<typeof setTimeout> | null = null
     const flushAssistantRender = (): void => {
       pendingAssistantRender = null
-      app.updateLastAssistant(streamedText || '🞄🞄🞄')
+      app.updateLastAssistant(streamedText || '· · ·')
     }
 
     try {
@@ -610,7 +689,7 @@ export async function startTuiRepl(): Promise<void> {
 
       // Add placeholder assistant entry for streaming
 
-      app.addEntry({ role: 'assistant', content: '🞄🞄🞄', timestamp: new Date() })
+      app.addEntry({ role: 'assistant', content: '· · ·', timestamp: new Date() })
 
       const { text: responseText, messages: newMessages } = await runAgent({
         model,
@@ -642,6 +721,7 @@ export async function startTuiRepl(): Promise<void> {
 
       messages = newMessages
       saveSession(currentSession, messages)
+      updateHeaderLabels()
 
       if (speechEnabled && responseText.trim()) {
         const provider = getConfiguredTtsProvider()

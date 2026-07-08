@@ -395,6 +395,9 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
         case 'crawl':
           await handleCrawl(args.slice(1))
           break
+        case 'align':
+          out.println('/align is only available in the TUI.')
+          break
         case 'onboard':
           await runOnboard(replRl)
           break

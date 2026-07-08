@@ -10,8 +10,8 @@ import {
   SyntaxStyle,
   TextAttributes,
   TextRenderable,
-  type TextChunk,
-  type CliRenderer
+  type CliRenderer,
+  type TextChunk
 } from '@jitl/opentui-core'
 
 // ── Colour palette ──────────────────────────────────────────────
@@ -21,7 +21,7 @@ const C = {
   surfaceRaised: '#151A22',
   border: '#2A3545',
   borderMuted: '#1B2430',
-  text: '#E7EDF4',
+  text: '#ECEBFA',
   textStrong: '#FFFFFF',
   dim: '#7B8796',
   muted: '#A7B0BE',
@@ -55,6 +55,8 @@ function buildSyntaxStyle(): SyntaxStyle {
 // ── Types ───────────────────────────────────────────────────────
 export interface OpenTUIAppConfig {
   contextLabel?: string
+  sessionLabel?: string
+  tokenContextLabel?: string
 }
 
 export interface ChatEntry {
@@ -62,7 +64,10 @@ export interface ChatEntry {
   content: string
   timestamp: Date
   elapsed?: string
+  renderMode?: 'markdown' | 'crypto'
 }
+
+export type UserMessageAlignment = 'left' | 'right'
 
 type Completer = (line: string) => [string[], string]
 
@@ -77,13 +82,14 @@ export class OpenTUIApp {
   private inputRef!: InputRenderable
   private inputFrameRef!: BoxRenderable
   private scrollBox!: ScrollBoxRenderable
+  private sessionLabelRef!: TextRenderable
+  private tokenContextLabelRef!: TextRenderable
   private contextLabelRef!: TextRenderable
   private helpBarRef!: TextRenderable
   private statusRef!: TextRenderable
   private entryFrameRefs: BoxRenderable[] = []
   private entryMetaRefs: TextRenderable[] = []
   private entryBodyRefs: BoxRenderable[] = []
-  private assistantTextRefs: TextRenderable[] = []
   private syntaxStyle: SyntaxStyle
   private entries: ChatEntry[] = []
   private _onSubmit: ((value: string) => void) | null = null
@@ -93,6 +99,9 @@ export class OpenTUIApp {
   private _config: OpenTUIAppConfig
   private destroyed = false
   private completer: Completer | null = null
+  private generating = false
+  private completionSuggestions: string[] = []
+  private userMessageAlignment: UserMessageAlignment = 'left'
 
   constructor(config: OpenTUIAppConfig = {}) {
     this._config = config
@@ -119,16 +128,25 @@ export class OpenTUIApp {
     // ── Header ────────────────────────────────────────────────
     const brand = new TextRenderable(ctx, {
       id: 'brand',
-      content: ' Cale ',
+      content: 'v0.4',
       fg: RGBA.fromHex(C.textStrong),
       bg: RGBA.fromHex(C.surfaceRaised),
       width: 8,
       truncate: true
     })
 
-    const subtitle = new TextRenderable(ctx, {
-      id: 'subtitle',
-      content: 'agent console',
+    this.sessionLabelRef = new TextRenderable(ctx, {
+      id: 'session-label',
+      content: this._config.sessionLabel ?? 'default',
+      fg: RGBA.fromHex(C.dim),
+      bg: RGBA.fromHex(C.bg),
+      maxWidth: 24,
+      truncate: true
+    })
+
+    this.tokenContextLabelRef = new TextRenderable(ctx, {
+      id: 'token-context-label',
+      content: this._config.tokenContextLabel ?? '0/ctx',
       fg: RGBA.fromHex(C.dim),
       bg: RGBA.fromHex(C.bg),
       flexGrow: 1,
@@ -156,7 +174,7 @@ export class OpenTUIApp {
     const header = new BoxRenderable(ctx, {
       id: 'header',
       width: '100%',
-      height: 3,
+      height: 2,
       flexDirection: 'row',
       alignItems: 'center',
       columnGap: 1,
@@ -166,7 +184,8 @@ export class OpenTUIApp {
       borderColor: C.borderMuted
     })
     header.add(brand)
-    header.add(subtitle)
+    header.add(this.sessionLabelRef)
+    header.add(this.tokenContextLabelRef)
     header.add(this.contextLabelRef)
     header.add(this.statusRef)
 
@@ -176,8 +195,8 @@ export class OpenTUIApp {
       flexGrow: 1,
       width: '100%',
       marginTop: 1,
-      marginBottom: 1,
-      paddingX: 2,
+      marginBottom: 0,
+      paddingX: 1,
       paddingY: 1,
       backgroundColor: C.surface,
       border: true,
@@ -211,8 +230,8 @@ export class OpenTUIApp {
       id: 'cmd-input',
       placeholder: 'message or /help',
       flexGrow: 1,
-      backgroundColor: C.inputBg,
-      focusedBackgroundColor: C.inputFocusedBg,
+      backgroundColor: C.bg,
+      focusedBackgroundColor: C.bg,
       textColor: C.text,
       focusedTextColor: C.textStrong,
       placeholderColor: C.dim,
@@ -223,9 +242,10 @@ export class OpenTUIApp {
     const inputRow = new BoxRenderable(ctx, {
       id: 'input-row',
       flexDirection: 'row',
-      backgroundColor: C.inputBg,
+      backgroundColor: C.bg,
       width: '100%',
-      height: 1
+      height: 1,
+      paddingY: 1
     })
     inputRow.add(arrow)
     inputRow.add(this.inputRef)
@@ -236,8 +256,9 @@ export class OpenTUIApp {
       width: '100%',
       height: 3,
       paddingX: 1,
+      paddingY: 1,
       alignItems: 'center',
-      // backgroundColor: C.inputBg,
+      backgroundColor: C.bg,
       border: true,
       borderStyle: 'rounded',
       borderColor: C.border,
@@ -250,10 +271,11 @@ export class OpenTUIApp {
     this.helpBarRef = new TextRenderable(ctx, {
       id: 'help-bar',
       content: this.buildHelpText(false),
-      fg: RGBA.fromHex(C.helpText),
-      bg: RGBA.fromHex(C.helpBg),
+      fg: RGBA.fromHex(C.dim),
+      bg: RGBA.fromHex(C.inputBg),
       width: '100%',
       height: 1,
+      marginTop: 1,
       truncate: true
     })
 
@@ -287,6 +309,7 @@ export class OpenTUIApp {
 
   private wireEvents(): void {
     this.inputRef.on(InputRenderableEvents.ENTER, () => {
+      this.clearCompletionSuggestions()
       const val = this.inputRef.value.trim()
       if (!val) return
       this.inputRef.value = ''
@@ -300,6 +323,7 @@ export class OpenTUIApp {
         return
       }
       if (key.ctrl && key.name === 'c') {
+        this.clearCompletionSuggestions()
         const abortHandled = this._onAbort?.()
         if (abortHandled) return
         this._onExit?.()
@@ -307,7 +331,13 @@ export class OpenTUIApp {
       }
       if (key.name === 'escape') {
         this.inputRef.value = ''
+        this.clearCompletionSuggestions()
       }
+      setImmediate(() => {
+        if (!this.inputRef.value.trimStart().startsWith('/')) {
+          this.clearCompletionSuggestions()
+        }
+      })
     })
   }
 
@@ -348,7 +378,22 @@ export class OpenTUIApp {
     this.entryFrameRefs = []
     this.entryMetaRefs = []
     this.entryBodyRefs = []
-    this.assistantTextRefs = []
+  }
+
+  setUserMessageAlignment(alignment: UserMessageAlignment): void {
+    if (this.userMessageAlignment === alignment) return
+    this.userMessageAlignment = alignment
+    this.rerenderEntries()
+  }
+
+  getUserMessageAlignment(): UserMessageAlignment {
+    return this.userMessageAlignment
+  }
+
+  toggleUserMessageAlignment(): UserMessageAlignment {
+    const next = this.userMessageAlignment === 'left' ? 'right' : 'left'
+    this.setUserMessageAlignment(next)
+    return next
   }
 
   updateLastAssistant(content: string): void {
@@ -379,13 +424,28 @@ export class OpenTUIApp {
     }
   }
 
+  setSessionLabel(label: string): void {
+    this._config.sessionLabel = label
+    if (this.sessionLabelRef) {
+      this.sessionLabelRef.content = label
+    }
+  }
+
+  setTokenContextLabel(label: string): void {
+    this._config.tokenContextLabel = label
+    if (this.tokenContextLabelRef) {
+      this.tokenContextLabelRef.content = label
+    }
+  }
+
   setGenerating(generating: boolean): void {
+    this.generating = generating
     if (this.statusRef) {
       this.statusRef.content = this.formatPill(generating ? 'busy' : 'ready')
       this.statusRef.fg = RGBA.fromHex(generating ? C.accentWarm : C.accent)
     }
     if (this.helpBarRef) {
-      this.helpBarRef.content = this.buildHelpText(generating)
+      this.updateHelpBar()
     }
     if (this.inputFrameRef) {
       this.inputFrameRef.borderColor = generating ? C.accentWarm : C.border
@@ -410,6 +470,9 @@ export class OpenTUIApp {
 
   setInputValue(val: string): void {
     this.inputRef.value = val
+    if (!val.trimStart().startsWith('/')) {
+      this.clearCompletionSuggestions()
+    }
   }
 
   getRenderer(): CliRenderer {
@@ -433,16 +496,31 @@ export class OpenTUIApp {
 
   // ── Message rendering ───────────────────────────────────────
 
+  private rerenderEntries(): void {
+    for (const frame of this.entryFrameRefs) {
+      if (frame) {
+        this.scrollBox.remove(frame.id)
+      }
+    }
+    this.entryFrameRefs = []
+    this.entryMetaRefs = []
+    this.entryBodyRefs = []
+    this.entries.forEach((entry, index) => this.addEntryRenderable(entry, index))
+  }
+
   private addEntryRenderable(entry: ChatEntry, index: number): void {
     const ctx = this.renderer
     const isAssistant = entry.role === 'assistant'
     const isUser = entry.role === 'user'
     const bg = isAssistant ? C.inputBg : C.surface
     const fg = isUser ? C.dim : entry.role === 'system' ? C.muted : C.text
+    const userAlignSelf = this.userMessageAlignment === 'right' ? 'flex-end' : 'flex-start'
+    const isRightAlignedUser = isUser && this.userMessageAlignment === 'right'
 
     const frame = new BoxRenderable(ctx, {
       id: `chat-entry-${index}`,
-      width: '100%',
+      width: isUser ? '75%' : '100%',
+      alignSelf: isUser ? userAlignSelf : undefined,
       flexDirection: 'column',
       marginBottom: 1,
       paddingX: isAssistant ? 2 : 1,
@@ -455,6 +533,7 @@ export class OpenTUIApp {
       id: `chat-entry-header-${index}`,
       width: '100%',
       flexDirection: 'row',
+      justifyContent: isRightAlignedUser ? 'flex-end' : undefined,
       columnGap: 1,
       backgroundColor: bg
     })
@@ -462,7 +541,7 @@ export class OpenTUIApp {
     const label = new TextRenderable(ctx, {
       id: `chat-entry-label-${index}`,
       content: this.entryLabel(entry.role),
-      fg: RGBA.fromHex(isUser ? C.dim : entry.role === 'system' ? C.muted : C.accentWarm),
+      fg: RGBA.fromHex(isUser ? C.accent : entry.role === 'system' ? C.muted : C.accentWarm),
       bg: RGBA.fromHex(bg),
       width: 3,
       truncate: true
@@ -473,7 +552,8 @@ export class OpenTUIApp {
       content: this.entryMeta(entry),
       fg: RGBA.fromHex(C.dim),
       bg: RGBA.fromHex(bg),
-      flexGrow: 1,
+      flexGrow: isRightAlignedUser ? undefined : 1,
+      width: isRightAlignedUser ? 'auto' : undefined,
       truncate: true
     })
 
@@ -481,11 +561,17 @@ export class OpenTUIApp {
       id: `chat-entry-body-${index}`,
       width: '100%',
       flexDirection: 'column',
+      alignItems: isUser && this.userMessageAlignment === 'right' ? 'flex-end' : 'flex-start',
       backgroundColor: bg
     })
 
-    header.add(label)
-    header.add(meta)
+    if (isRightAlignedUser) {
+      header.add(meta)
+      header.add(label)
+    } else {
+      header.add(label)
+      header.add(meta)
+    }
     frame.add(header)
     frame.add(body)
     this.renderEntryBody(body, entry, index)
@@ -501,39 +587,108 @@ export class OpenTUIApp {
     const bg = isAssistant ? C.inputBg : C.surface
     const fg = isUser ? C.dim : entry.role === 'system' ? C.muted : C.text
 
-    if (isAssistant) {
-      const styledContent = this.assistantContentToStyledText(entry.content, fg, bg)
-      const existing = this.assistantTextRefs[index]
-      if (existing) {
-        existing.content = styledContent
-        return
-      }
-
-      for (const child of body.getChildren()) {
-        body.remove(child.id)
-      }
-
-      const renderable = new TextRenderable(this.renderer, {
-        id: `chat-entry-assistant-text-${index}`,
-        content: styledContent,
-        fg: RGBA.fromHex(fg),
-        bg: RGBA.fromHex(bg),
-        width: '100%',
-        wrapMode: 'word'
-      })
-      body.add(renderable)
-      this.assistantTextRefs[index] = renderable
-      return
-    }
-
     for (const child of body.getChildren()) {
       body.remove(child.id)
     }
 
-    if (!isAssistant) {
-      this.addMarkdownBody(body, entry.content.trimEnd() || ' ', fg, bg, `chat-entry-markdown-${index}-0`)
+    if (isAssistant) {
+      const lines = this.assistantContentToStyledTextLines(entry.content, fg, bg)
+      lines.forEach((line, lineIndex) => {
+        body.add(
+          new TextRenderable(this.renderer, {
+            id: `chat-entry-assistant-text-${index}-${lineIndex}`,
+            content: line,
+            fg: RGBA.fromHex(fg),
+            bg: RGBA.fromHex(bg),
+            width: '100%',
+            wrapMode: 'word'
+          })
+        )
+      })
       return
     }
+
+    if (entry.role === 'system' && entry.renderMode === 'crypto') {
+      this.addCryptoBody(body, entry.content.trimEnd() || '', fg, bg, `chat-entry-crypto-${index}`)
+      return
+    }
+
+    if (isUser && this.userMessageAlignment === 'right') {
+      this.addPlainTextBody(body, entry.content.trimEnd() || '', fg, bg, `chat-entry-user-text-${index}`)
+      return
+    }
+
+    if (!isAssistant) {
+      this.addMarkdownBody(body, entry.content.trimEnd() || '', fg, bg, `chat-entry-markdown-${index}-0`)
+      return
+    }
+  }
+
+  private addPlainTextBody(body: BoxRenderable, content: string, fg: string, bg: string, idPrefix: string): void {
+    const lines = content.split('\n')
+    lines.forEach((line, lineIndex) => {
+      body.add(
+        new TextRenderable(this.renderer, {
+          id: `${idPrefix}-${lineIndex}`,
+          content: line.trimEnd(),
+          fg: RGBA.fromHex(fg),
+          bg: RGBA.fromHex(bg),
+          maxWidth: '100%',
+          alignSelf: 'flex-end',
+          wrapMode: 'word'
+        })
+      )
+    })
+  }
+
+  private addCryptoBody(body: BoxRenderable, content: string, fg: string, bg: string, idPrefix: string): void {
+    const lines = content.split('\n')
+    lines.forEach((line, lineIndex) => {
+      body.add(
+        new TextRenderable(this.renderer, {
+          id: `${idPrefix}-${lineIndex}`,
+          content: this.cryptoLineToStyledText(line, fg, bg),
+          fg: RGBA.fromHex(fg),
+          bg: RGBA.fromHex(bg),
+          width: '100%',
+          wrapMode: 'word'
+        })
+      )
+    })
+  }
+
+  private cryptoLineToStyledText(line: string, fg: string, bg: string): StyledText {
+    const chunks: TextChunk[] = []
+    const parts = line.split(/(\s{2,})/)
+    let fieldIndex = 0
+
+    for (const part of parts) {
+      if (!part) continue
+      const isSeparator = /^\s{2,}$/.test(part)
+      const isNegativeChange = !isSeparator && fieldIndex === 3 && part.trimStart().startsWith('-')
+      chunks.push({
+        __isChunk: true,
+        text: part,
+        fg: RGBA.fromHex(isNegativeChange ? C.dim : fg),
+        bg: RGBA.fromHex(bg)
+      })
+      if (!isSeparator) {
+        fieldIndex += 1
+      }
+    }
+
+    return new StyledText(
+      chunks.length > 0
+        ? chunks
+        : [
+            {
+              __isChunk: true,
+              text: '',
+              fg: RGBA.fromHex(fg),
+              bg: RGBA.fromHex(bg)
+            }
+          ]
+    )
   }
 
   private addMarkdownBody(body: BoxRenderable, content: string, fg: string, bg: string, id: string): void {
@@ -573,7 +728,7 @@ export class OpenTUIApp {
 
       segments.push({
         kind: 'gesture',
-        content: content.slice(openIdx, closeIdx + 1).replaceAll('*', ' ')
+        content: content.slice(openIdx + 1, closeIdx).trim()
       })
 
       searchFrom = closeIdx + 1
@@ -587,40 +742,70 @@ export class OpenTUIApp {
     return segments
   }
 
-  private assistantContentToStyledText(content: string, fg: string, bg: string): StyledText {
+  private assistantContentToStyledTextLines(content: string, fg: string, bg: string): StyledText[] {
     const segments = this.parseAssistantSegments(content)
-    const chunks: TextChunk[] = []
+    const lines: TextChunk[][] = [[]]
+
+    const appendChunk = (chunk: TextChunk): void => {
+      const currentLine = lines[lines.length - 1]
+      if (currentLine) {
+        currentLine.push(chunk)
+      }
+    }
+
+    const pushLine = (): void => {
+      lines.push([])
+    }
 
     for (const segment of segments) {
       if (segment.kind === 'text') {
-        chunks.push({
-          __isChunk: true,
-          text: segment.content,
-          fg: RGBA.fromHex(fg),
-          bg: RGBA.fromHex(bg)
+        const parts = segment.content.replace(/\r\n/g, '\n').split('\n')
+        parts.forEach((part, partIndex) => {
+          if (partIndex > 0) {
+            pushLine()
+          }
+          const currentLine = lines[lines.length - 1]
+          const isAtLineStart = !currentLine || currentLine.length === 0
+          const textContent = partIndex > 0 || isAtLineStart ? part.replace(/^[ \t]+/, '') : part
+          if (!textContent) return
+          appendChunk({
+            __isChunk: true,
+            text: textContent,
+            fg: RGBA.fromHex(fg),
+            bg: RGBA.fromHex(bg)
+          })
         })
         continue
       }
 
-      chunks.push({
+      appendChunk({
         __isChunk: true,
-        text: `${segment.content}\n`,
+        text: segment.content,
         fg: RGBA.fromHex(C.dim),
         bg: RGBA.fromHex(bg),
         attributes: TextAttributes.DIM | TextAttributes.ITALIC
       })
+      pushLine()
     }
 
-    if (chunks.length === 0) {
-      chunks.push({
-        __isChunk: true,
-        text: ' ',
-        fg: RGBA.fromHex(fg),
-        bg: RGBA.fromHex(bg)
-      })
+    while (lines.length > 1 && lines[lines.length - 1]?.length === 0) {
+      lines.pop()
     }
 
-    return new StyledText(chunks)
+    if (lines.length === 0 || lines.every((line) => line.length === 0)) {
+      return [
+        new StyledText([
+          {
+            __isChunk: true,
+            text: '',
+            fg: RGBA.fromHex(fg),
+            bg: RGBA.fromHex(bg)
+          }
+        ])
+      ]
+    }
+
+    return lines.map((line) => new StyledText(line))
   }
 
   private updateEntryMeta(index: number): void {
@@ -645,7 +830,7 @@ export class OpenTUIApp {
   }
 
   private formatPill(value: string): string {
-    return ` ${value} `
+    return `${value} `
   }
 
   private completeInput(): void {
@@ -653,10 +838,14 @@ export class OpenTUIApp {
 
     const line = this.inputRef.value
     const [matches] = this.completer(line)
-    if (matches.length === 0) return
+    if (matches.length === 0) {
+      this.clearCompletionSuggestions()
+      return
+    }
 
     if (matches.length === 1) {
       this.inputRef.value = this.ensureCompletionSpacing(matches[0] ?? line)
+      this.clearCompletionSuggestions()
       return
     }
 
@@ -664,11 +853,69 @@ export class OpenTUIApp {
     if (commonPrefix.length > line.length) {
       this.inputRef.value = commonPrefix
     }
+    this.setCompletionSuggestions(matches)
     this._onCompletionSuggestions?.(matches)
   }
 
   private ensureCompletionSpacing(value: string): string {
     return value.includes(' ') ? value : `${value} `
+  }
+
+  private setCompletionSuggestions(suggestions: string[]): void {
+    this.completionSuggestions = suggestions
+    this.updateHelpBar()
+  }
+
+  private formatCompletionSuggestion(suggestion: string): string {
+    const trimmed = suggestion.trim()
+    if (!trimmed.startsWith('/')) return trimmed
+
+    const input = this.inputRef.value.trimStart()
+    const [inputCommand, inputSubcommand] = input.split(/\s+/)
+    const [suggestionCommand, suggestionSubcommand, ...suggestionRest] = trimmed.split(/\s+/)
+
+    if (inputCommand && suggestionCommand === inputCommand) {
+      if (inputSubcommand && suggestionSubcommand === inputSubcommand) {
+        return suggestionRest.join(' ') || suggestionSubcommand || trimmed.slice(1)
+      }
+      return [suggestionSubcommand, ...suggestionRest].filter(Boolean).join(' ') || suggestionCommand.slice(1)
+    }
+
+    return trimmed.slice(1)
+  }
+
+  private clearCompletionSuggestions(): void {
+    if (this.completionSuggestions.length === 0) return
+    this.completionSuggestions = []
+    this.updateHelpBar()
+  }
+
+  private buildCompletionHelpText(): StyledText {
+    return new StyledText([
+      {
+        __isChunk: true,
+        text: '⌁',
+        fg: RGBA.fromHex(C.accentWarm),
+        bg: RGBA.fromHex(C.inputBg)
+      },
+      {
+        __isChunk: true,
+        text: `  ${this.completionSuggestions
+          .slice(0, 6)
+          .map((suggestion) => this.formatCompletionSuggestion(suggestion))
+          .join('  ')}`,
+        fg: RGBA.fromHex(C.text),
+        bg: RGBA.fromHex(C.inputBg)
+      }
+    ])
+  }
+
+  private updateHelpBar(): void {
+    if (this.helpBarRef) {
+      const hasSuggestions = this.completionSuggestions.length > 0
+      this.helpBarRef.content = hasSuggestions ? this.buildCompletionHelpText() : this.buildHelpText(this.generating)
+      this.helpBarRef.fg = RGBA.fromHex(hasSuggestions ? C.text : C.dim)
+    }
   }
 
   private longestCommonPrefix(values: string[]): string {

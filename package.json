@@ -1,6 +1,6 @@
 {
   "name": "cale",
-  "version": "0.1.0",
+  "version": "0.1.42",
   "description": "Minimal AI agent CLI with filesystem, shell, and web tools",
   "type": "module",
   "bin": {
