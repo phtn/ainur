@@ -8,6 +8,7 @@ import { runAgent } from '../agent/loop.ts'
 import { resolveProviderAndModel } from '../agent/model-selection.ts'
 import { getCurrentSessionName, loadSession, saveSession, setCurrentSessionName } from '../config/sessions.ts'
 import { getSettingsWithEnv, loadSettings, saveSettings, type Provider, type TtsProvider } from '../config/settings.ts'
+import { COHERE_CHAT_MODELS_SORTED, COHERE_CONTEXT_LENGTHS } from '../config/cohere-models.ts'
 import { setApprovalCallback, speakText } from '../tools/index.ts'
 import { getConfiguredTtsProvider, listTtsProviders } from '../tools/tts.ts'
 import {
@@ -401,17 +402,42 @@ export async function startRepl(rl?: ReturnType<typeof createReadline>): Promise
         case 'onboard':
           await runOnboard(replRl)
           break
-        case 'model':
-          if (args[0]) {
-            const settings = getSettingsWithEnv()
-            const fallbackProvider = modelOverride?.provider ?? settings.provider
-            const selection = resolveProviderAndModel(args[0], fallbackProvider)
-            modelOverride = { ...modelOverride, provider: selection.provider, model: selection.model }
-            out.successLine(`Model set to ${selection.provider}/${selection.model}`)
-          } else {
-            out.error('Usage: /model <model-id>')
+        case 'model': {
+          const rawArg = args[0]?.trim() ?? ''
+          const activeProvider = modelOverride?.provider ?? getSettingsWithEnv().provider
+          const activeModel = modelOverride?.model ?? getSettingsWithEnv().model
+          if (!rawArg || rawArg.toLowerCase() === 'list' || rawArg.toLowerCase() === 'ls') {
+            out.println('Cohere chat models (* = active, n to select):')
+            COHERE_CHAT_MODELS_SORTED.forEach((m, i) => {
+              const marker = m.name === activeModel && activeProvider === 'cohere' ? '*' : ' '
+              const ctx = `${Math.round(m.context_length / 1000)}k`
+              out.println(`${marker} ${String(i + 1).padStart(2)}. ${m.name.padEnd(32)} ${ctx.padStart(6)} ctx  ${m.endpoints.join('/')}`)
+            })
+            out.println('')
+            out.println('Usage: /model <n|model-id|cohere/model-id>  •  /model list')
+            break
           }
+          const numeric = Number.parseInt(rawArg, 10)
+          if (!Number.isNaN(numeric) && String(numeric) === rawArg && numeric >= 1 && numeric <= COHERE_CHAT_MODELS_SORTED.length) {
+            const picked = COHERE_CHAT_MODELS_SORTED[numeric - 1]!
+            modelOverride = { ...modelOverride, provider: 'cohere', model: picked.name }
+            out.successLine(`Model set to cohere/${picked.name}`)
+            break
+          }
+          const settings = getSettingsWithEnv()
+          const fallbackProvider = modelOverride?.provider ?? settings.provider
+          const selection = resolveProviderAndModel(rawArg, fallbackProvider)
+          const bare = selection.model
+          const cohereMatch = COHERE_CHAT_MODELS_SORTED.find((m) => m.name === bare || m.name === rawArg.replace(/^cohere\//, ''))
+          if (cohereMatch && selection.provider !== 'cohere' && fallbackProvider !== 'cohere' && rawArg.includes('/') === false) {
+            modelOverride = { ...modelOverride, provider: 'cohere', model: cohereMatch.name }
+            out.successLine(`Model set to cohere/${cohereMatch.name}`)
+            break
+          }
+          modelOverride = { ...modelOverride, provider: selection.provider, model: selection.model }
+          out.successLine(`Model set to ${selection.provider}/${selection.model}`)
           break
+        }
         case 'tts': {
           const sub = (args[0] ?? '').toLowerCase()
           if (!sub) {

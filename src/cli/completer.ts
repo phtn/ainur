@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process'
 import { listPresets } from '../config/prompts.ts'
 import { listSessions } from '../config/sessions.ts'
 import { getSettingsWithEnv, loadSettings } from '../config/settings.ts'
+import { COHERE_CHAT_MODELS_SORTED } from '../config/cohere-models.ts'
 
 const COMMANDS = [
   '/help',
@@ -31,9 +32,9 @@ const HEARTBEAT_LAUNCHD_SUBCOMMANDS = ['status', 'install', 'uninstall', 'print'
 const ALIGN_SUBCOMMANDS = ['left', 'right', 'toggle']
 const TTS_SUBCOMMANDS = ['on', 'off', 'use', 'melo', 'voice', 'language', 'speed', 'ls']
 const TTS_PROVIDERS = ['rhasspy', 'endpoint', 'piper', 'melo']
+const COHERE_SUGGESTIONS = COHERE_CHAT_MODELS_SORTED.map((m) => `cohere/${m.name}`)
 const MODEL_SUGGESTIONS = [
-  'cohere/command-a-plus-05-2026',
-  'cohere/command-a-03-2025',
+  ...COHERE_SUGGESTIONS,
   'openai/gpt-4o',
   'openai/gpt-4.1',
   'openai/o3',

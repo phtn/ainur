@@ -53,7 +53,7 @@ export function handleHelp(): void {
   ${c('/uuid')}     ${d('Generate UUIDv7 values')} ${d('(/uuid [count] | /uuidv7 [count])')}
   ${c('/crawl')}    ${d('Dead code analysis')} ${d('([<dir>] | <symbol> [--root path] [--git-url url])')}
   ${c('/align')}    ${d('TUI user message alignment')} ${d('(left, right, toggle)')}
-  ${c('/model')}    ${d('Switch model')} ${d('(/model gpt-4o)')}
+  ${c('/model')}    ${d('Switch model')} ${d('(/model list | /model 3 | /model cohere/command-a-plus-05-2026)')}
   ${c('/prompt')}   ${d('Manage system prompts')} ${d('(list, use, add, set, show, remove)')}
   ${c('/session')}  ${d('Manage conversations')} ${d('(list, use, new, remove, current)')}
   ${c('/heartbeat')} ${d('Heartbeat service')} ${d('(status, start, stop, once, launchd)')}

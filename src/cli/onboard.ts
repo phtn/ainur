@@ -7,11 +7,12 @@ import {
 } from "../config/settings.ts";
 import type { Provider, CaleSettings } from "../config/settings.ts";
 import { out } from "./output.ts";
+import { COHERE_CHAT_MODELS_SORTED } from "../config/cohere-models.ts";
 
 const PROVIDERS: { id: Provider; name: string; defaultModel: string; envKey: string }[] = [
   { id: "openai", name: "OpenAI (GPT-4, etc.)", defaultModel: "gpt-4o", envKey: "OPENAI_API_KEY" },
   { id: "anthropic", name: "Anthropic (Claude)", defaultModel: "claude-sonnet-4-20250514", envKey: "ANTHROPIC_API_KEY" },
-  { id: "cohere", name: "Cohere (Command A)", defaultModel: "command-a-03-2025", envKey: "COHERE_API_KEY" },
+  { id: "cohere", name: "Cohere (Command A)", defaultModel: "command-a-plus-05-2026", envKey: "COHERE_API_KEY" },
   { id: "openrouter", name: "OpenRouter (many models)", defaultModel: "anthropic/claude-3.5-sonnet", envKey: "OPENROUTER_API_KEY" },
   { id: "ollama", name: "Ollama (local models)", defaultModel: "codestral:22b", envKey: "OLLAMA_BASE_URL" },
 ];
@@ -60,14 +61,45 @@ export async function runOnboard(rl?: ReturnType<typeof createReadline>): Promis
     out.println(`Enter 1-${PROVIDERS.length}.`);
   }
 
-  // 2. Model
-  out.println(`\nSuggested model for ${provider.name}: ${provider.defaultModel}`);
+  // 2. Model — for Cohere show selectable list from docs/cohere/get-models.md
   let model: string;
-  for (;;) {
-    const modelInput = await question(ownRl, "Model: ");
-    model = modelInput.trim();
-    if (model) break;
-    out.println("Enter a model ID.");
+  if (provider.id === "cohere") {
+    out.println(`\nAvailable Cohere chat models:`);
+    COHERE_CHAT_MODELS_SORTED.forEach((m, i) => {
+      const marker = m.name === provider.defaultModel ? " (default)" : "";
+      const ctx = `${Math.round(m.context_length / 1000)}k`;
+      const feats = m.features ? ` [${m.features.slice(0, 3).join(", ")}]` : "";
+      out.println(`  ${String(i + 1).padStart(2)}. ${m.name.padEnd(32)} ${ctx.padStart(6)} ctx${feats}${marker}`);
+    });
+    out.println(`\nSuggested model for ${provider.name}: ${provider.defaultModel}`);
+    for (;;) {
+      const modelInput = await question(ownRl, `Select model [1-${COHERE_CHAT_MODELS_SORTED.length}] or type model ID [${provider.defaultModel}]: `);
+      const trimmed = modelInput.trim();
+      if (!trimmed) {
+        model = provider.defaultModel;
+        break;
+      }
+      const n = parseInt(trimmed, 10);
+      if (!Number.isNaN(n) && n >= 1 && n <= COHERE_CHAT_MODELS_SORTED.length) {
+        model = COHERE_CHAT_MODELS_SORTED[n - 1]!.name;
+        break;
+      }
+      // Allow direct model ID or cohere/prefix form
+      const direct = trimmed.replace(/^cohere\//, "");
+      if (COHERE_CHAT_MODELS_SORTED.some((m) => m.name === direct) || direct.length > 2) {
+        model = direct;
+        break;
+      }
+      out.println(`Enter 1-${COHERE_CHAT_MODELS_SORTED.length} or a model ID.`);
+    }
+  } else {
+    out.println(`\nSuggested model for ${provider.name}: ${provider.defaultModel}`);
+    for (;;) {
+      const modelInput = await question(ownRl, "Model: ");
+      model = modelInput.trim();
+      if (model) break;
+      out.println("Enter a model ID.");
+    }
   }
 
   // 3. API key

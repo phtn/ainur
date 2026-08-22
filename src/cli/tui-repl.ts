@@ -6,6 +6,7 @@ import { resolveProviderAndModel } from '../agent/model-selection.ts'
 import { addOrUpdatePreset } from '../config/prompts.ts'
 import { getCurrentSessionName, loadSession, saveSession, setCurrentSessionName } from '../config/sessions.ts'
 import { getSettingsWithEnv, loadSettings, saveSettings, type Provider, type TtsProvider } from '../config/settings.ts'
+import { COHERE_CHAT_MODELS_SORTED, COHERE_CONTEXT_LENGTHS } from '../config/cohere-models.ts'
 import {
   fetchMeloTtsLanguages,
   fetchMeloTtsVoices,
@@ -171,6 +172,10 @@ function compactTokenCount(tokens: number): string {
 }
 
 function getContextWindowTokens(provider: Provider, model: string): number | null {
+  if (provider === 'cohere') {
+    const exact = COHERE_CONTEXT_LENGTHS[model] ?? COHERE_CONTEXT_LENGTHS[model.toLowerCase()]
+    if (exact) return exact
+  }
   const normalized = model.toLowerCase()
   if (provider === 'cohere' && normalized.includes('command-a')) return 256_000
   if (provider === 'anthropic' || normalized.includes('claude')) return 200_000
@@ -180,6 +185,17 @@ function getContextWindowTokens(provider: Provider, model: string): number | nul
   if (normalized.includes('codestral')) return 32_000
   if (normalized.includes('llama3.1')) return 128_000
   return null
+}
+
+function formatCohereModelList(activeModel: string): string {
+  const lines = COHERE_CHAT_MODELS_SORTED.map((m, i) => {
+    const marker = m.name === activeModel ? '*' : ' '
+    const ctx = `${Math.round(m.context_length / 1000)}k`
+    const eps = m.endpoints.join('/')
+    const feats = m.features ? ` [${m.features.slice(0, 3).join(', ')}]` : ''
+    return `${marker} ${String(i + 1).padStart(2)}. ${m.name.padEnd(32)} ${ctx.padStart(6)} ctx  ${eps}${feats}`
+  })
+  return ['**Cohere chat models** (`*` = active, `n` to select):', ...lines, '', 'Usage: `/model <n|model-id|cohere/model-id>`  •  `/model list`'].join('\n')
 }
 
 function formatTokenContextLabel(messages: ModelMessage[], provider: Provider, model: string): string {
@@ -367,23 +383,57 @@ export async function startTuiRepl(): Promise<void> {
         addSystemEntry('Conversation cleared.')
         break
 
-      case 'model':
-        if (args[0]) {
-          const s = getSettingsWithEnv()
-          const fallbackProvider = modelOverride?.provider ?? s.provider
-          const selection = resolveProviderAndModel(args[0], fallbackProvider)
-          modelOverride = { ...modelOverride, provider: selection.provider, model: selection.model }
+      case 'model': {
+        const active = getActiveModelSelection()
+        const rawArg = args[0]?.trim() ?? ''
+        // /model list  or bare /model  -> show selectable list
+        if (!rawArg || rawArg.toLowerCase() === 'list' || rawArg.toLowerCase() === 'ls') {
+          addSystemEntry(formatCohereModelList(active.model))
+          break
+        }
+        // numeric selection: /model 3  -> pick from sorted Cohere list
+        const numeric = Number.parseInt(rawArg, 10)
+        if (!Number.isNaN(numeric) && String(numeric) === rawArg && numeric >= 1 && numeric <= COHERE_CHAT_MODELS_SORTED.length) {
+          const picked = COHERE_CHAT_MODELS_SORTED[numeric - 1]!
+          modelOverride = { ...modelOverride, provider: 'cohere', model: picked.name }
           app.addEntry({
             role: 'system',
-            content: `Model set to **${selection.provider}/${selection.model}**`,
-            timestamp: new Date()
+            content: `Model set to **cohere/${picked.name}**`,
+            timestamp: new Date(),
           })
-          app.setContextLabel(`${selection.provider}/${selection.model}`)
+          app.setContextLabel(`cohere/${picked.name}`)
           updateHeaderLabels()
-        } else {
-          addSystemEntry('Usage: /model <model-id>')
+          break
         }
+        // normal provider/model resolution
+        const s = getSettingsWithEnv()
+        const fallbackProvider = modelOverride?.provider ?? s.provider
+        const selection = resolveProviderAndModel(rawArg, fallbackProvider)
+        // also allow bare model name that matches a Cohere catalog entry to force cohere provider
+        const bare = selection.model
+        const cohereMatch = COHERE_CHAT_MODELS_SORTED.find((m) => m.name === bare || m.name === rawArg.replace(/^cohere\//, ''))
+        if (cohereMatch && selection.provider !== 'cohere' && fallbackProvider !== 'cohere' && rawArg.includes('/') === false) {
+          // if user typed exact Cohere name without prefix, treat as cohere
+          modelOverride = { ...modelOverride, provider: 'cohere', model: cohereMatch.name }
+          app.addEntry({
+            role: 'system',
+            content: `Model set to **cohere/${cohereMatch.name}**`,
+            timestamp: new Date(),
+          })
+          app.setContextLabel(`cohere/${cohereMatch.name}`)
+          updateHeaderLabels()
+          break
+        }
+        modelOverride = { ...modelOverride, provider: selection.provider, model: selection.model }
+        app.addEntry({
+          role: 'system',
+          content: `Model set to **${selection.provider}/${selection.model}**`,
+          timestamp: new Date(),
+        })
+        app.setContextLabel(`${selection.provider}/${selection.model}`)
+        updateHeaderLabels()
         break
+      }
 
       case 'prompt': {
         const sub = args[0]
